@@ -33,7 +33,7 @@ def describe_numeric(df: pl.DataFrame, column: str) -> dict[str, Any]:
     values = series.drop_nulls()
     if not len(values):
         return {"column": column, "count": 0}
-    return {"column": column, "count": len(values), "missing": series.null_count(), "mean": values.mean(), "median": values.median(), "std": values.std(), "min": values.min(), "q25": values.quantile(.25), "q75": values.quantile(.75), "max": values.max()}
+    return {"column": column, "count": len(values), "missing": series.null_count(), "mean": values.mean(), "median": values.median(), "std": values.std(), "min": values.min(), "q25": values.quantile(.25, interpolation="linear"), "q75": values.quantile(.75, interpolation="linear"), "max": values.max()}
 
 
 def value_counts(df: pl.DataFrame, column: str, limit: int = 10) -> pl.DataFrame:
@@ -67,7 +67,7 @@ def describe(df: pl.DataFrame, columns: Sequence[str] | None = None) -> dict[str
         values = df.get_column(column).drop_nulls()
         row = {"column": column, "count": len(values), "missing": df.get_column(column).null_count()}
         if len(values):
-            row.update({"mean": values.mean(), "median": values.median(), "std": values.std(), "min": values.min(), "p25": values.quantile(.25), "p50": values.quantile(.50), "p75": values.quantile(.75), "p95": values.quantile(.95), "max": values.max(), "unique": values.n_unique()})
+            row.update({"mean": values.mean(), "median": values.median(), "std": values.std(), "min": values.min(), "p25": values.quantile(.25, interpolation="linear"), "p50": values.quantile(.50, interpolation="linear"), "p75": values.quantile(.75, interpolation="linear"), "p95": values.quantile(.95, interpolation="linear"), "max": values.max(), "unique": values.n_unique()})
         rows.append(row)
     return _result("descriptive_statistics", {"columns": selected}, rows, row_count=df.height)
 
