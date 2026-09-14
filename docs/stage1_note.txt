@@ -1,0 +1,1 @@
+Stage 1 foundation: ingestion, profiling, quality checks, deterministic analysis, read-only DuckDB queries, structured results, CLI, tests, CI, and source documentation.

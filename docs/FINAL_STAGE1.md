@@ -1,0 +1,1 @@
+Stage 1 contains the deterministic analytical foundation. The repository uses real-world data sources and keeps external datasets out of version control. The AI agent, visualization UI, forecasting, and external API integrations are planned for later stages.

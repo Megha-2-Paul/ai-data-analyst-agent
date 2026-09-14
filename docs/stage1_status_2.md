@@ -1,0 +1,1 @@
+Stage 1 implementation is on the `stage-1-foundation` branch. Core ingestion, profiling, quality checks, analysis, DuckDB support, structured results, CLI, tests, CI, and real-world source documentation are included.

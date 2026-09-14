@@ -1,0 +1,1 @@
+Stage 1: real-world dataset ingestion, profiling, quality assessment, deterministic analysis, read-only DuckDB querying, structured traceability, CLI, tests, and CI. AI agent and UI are deferred to later stages.
