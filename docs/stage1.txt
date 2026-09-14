@@ -1,0 +1,1 @@
+Stage 1 contains the deterministic analytical foundation. External real-world datasets remain outside version control. AI agent, visualization UI, forecasting, and API integrations are later stages.
