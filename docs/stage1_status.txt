@@ -1,0 +1,1 @@
+Stage 1 implementation is on the stage-1-foundation branch. It includes ingestion, profiling, quality checks, descriptive analysis, DuckDB query support, traceable results, CLI, tests, CI, and real-world data-source documentation. External NYC TLC data is kept local and is not committed.
