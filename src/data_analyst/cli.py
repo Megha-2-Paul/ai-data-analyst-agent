@@ -6,6 +6,7 @@ from pathlib import Path
 
 import polars as pl
 
+from .agent import AnalystAgent
 from .analysis import aggregate, correlation, describe, time_series
 from .ingestion import load_dataset
 from .planner import plan_query
@@ -21,9 +22,10 @@ def main() -> None:
         sub = subparsers.add_parser(command)
         sub.add_argument("path", type=Path, help="Path to a CSV or Parquet dataset")
 
-    sub = subparsers.add_parser("plan")
-    sub.add_argument("path", type=Path, help="Path to a CSV or Parquet dataset")
-    sub.add_argument("question", help="Natural-language analytical question")
+    for command in ("plan", "ask"):
+        sub = subparsers.add_parser(command)
+        sub.add_argument("path", type=Path, help="Path to a CSV or Parquet dataset")
+        sub.add_argument("question", help="Natural-language analytical question")
 
     sub = subparsers.add_parser("describe")
     sub.add_argument("path", type=Path)
@@ -49,7 +51,9 @@ def main() -> None:
     args = parser.parse_args()
     df = load_dataset(args.path)
 
-    if args.command == "plan":
+    if args.command == "ask":
+        result = AnalystAgent().ask(args.question, df).to_dict()
+    elif args.command == "plan":
         numeric_columns = [name for name, dtype in df.schema.items() if dtype.is_numeric()]
         datetime_columns = [
             name for name, dtype in df.schema.items()
