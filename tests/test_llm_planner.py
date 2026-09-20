@@ -11,9 +11,11 @@ class FakeResponses:
         self.payload = payload
 
     def create(self, **kwargs):
+        payload = self.payload
+
         class Response:
             output_text = json.dumps(payload)
-        payload = self.payload
+
         return Response()
 
 
