@@ -4,8 +4,11 @@ import argparse
 import json
 from pathlib import Path
 
+import polars as pl
+
 from .analysis import aggregate, correlation, describe, time_series
 from .ingestion import load_dataset
+from .planner import plan_query
 from .profiling import profile_dataset
 from .quality import quality_report
 
@@ -17,6 +20,10 @@ def main() -> None:
     for command in ("profile", "quality"):
         sub = subparsers.add_parser(command)
         sub.add_argument("path", type=Path, help="Path to a CSV or Parquet dataset")
+
+    sub = subparsers.add_parser("plan")
+    sub.add_argument("path", type=Path, help="Path to a CSV or Parquet dataset")
+    sub.add_argument("question", help="Natural-language analytical question")
 
     sub = subparsers.add_parser("describe")
     sub.add_argument("path", type=Path)
@@ -41,7 +48,20 @@ def main() -> None:
 
     args = parser.parse_args()
     df = load_dataset(args.path)
-    if args.command == "profile":
+
+    if args.command == "plan":
+        numeric_columns = [name for name, dtype in df.schema.items() if dtype.is_numeric()]
+        datetime_columns = [
+            name for name, dtype in df.schema.items()
+            if dtype in (pl.Date, pl.Datetime)
+        ]
+        result = plan_query(
+            args.question,
+            columns=df.columns,
+            numeric_columns=numeric_columns,
+            datetime_columns=datetime_columns,
+        ).to_dict()
+    elif args.command == "profile":
         result = profile_dataset(df)
     elif args.command == "quality":
         result = quality_report(df)
