@@ -23,8 +23,15 @@ Stage 1 focuses on the trustworthy analytical core rather than the LLM agent its
 - Grouped/time-based analysis
 - DuckDB analytical queries
 - Structured, traceable analysis results
+- Natural-language query planning
 - Automated tests
 - Command-line interface
+
+### Stage 1.3 — Query Planning
+
+The query-planning layer converts supported natural-language analytical requests into validated `QueryPlan` objects. It is deliberately conservative: it only references columns supplied by the dataset schema and raises an explicit planning error when a request is ambiguous or unsupported.
+
+This creates the contract that the future LLM agent will use to select analytical tools without moving computation into the language model.
 
 The project deliberately does **not** commit external datasets to the repository. See [`docs/data_sources.md`](docs/data_sources.md) for source and download guidance.
 
@@ -39,9 +46,12 @@ Dataset profiling
     ↓
 Data-quality engine
     ↓
+Query planning
+    ↓
 Analytical tools
     ├── statistics
     ├── grouped analysis
+    ├── time-series analysis
     └── DuckDB queries
     ↓
 Structured analysis results
@@ -66,4 +76,4 @@ This repository is being developed incrementally. Each stage is validated before
 
 ## Status
 
-**Stage 1 — Foundation: in development**
+**Stage 1.3 — Query Planning: in development**
