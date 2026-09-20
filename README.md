@@ -1,6 +1,6 @@
 # AI Data Analyst Agent
 
-An extensible AI-powered data analysis platform designed to analyze **real-world structured datasets** using a reliable analytical engine, with an agent layer added in later stages.
+An extensible AI-powered data analysis platform designed to analyze **real-world structured datasets** using a reliable analytical engine, with an agent layer added incrementally.
 
 ## Project vision
 
@@ -14,7 +14,7 @@ Initial real-world validation sources:
 
 ## Stage 1 — Foundation
 
-Stage 1 focuses on the trustworthy analytical core rather than the LLM agent itself:
+Stage 1 builds a trustworthy analytical core and the first agent orchestration layer:
 
 - CSV and Parquet ingestion
 - Dataset profiling
@@ -24,14 +24,39 @@ Stage 1 focuses on the trustworthy analytical core rather than the LLM agent its
 - DuckDB analytical queries
 - Structured, traceable analysis results
 - Natural-language query planning
+- Agent orchestration and execution traces
 - Automated tests
 - Command-line interface
 
 ### Stage 1.3 — Query Planning
 
-The query-planning layer converts supported natural-language analytical requests into validated `QueryPlan` objects. It is deliberately conservative: it only references columns supplied by the dataset schema and raises an explicit planning error when a request is ambiguous or unsupported.
+The query-planning layer converts supported natural-language analytical requests into validated `QueryPlan` objects. It only references columns supplied by the dataset schema and raises an explicit planning error when a request is ambiguous or unsupported.
 
-This creates the contract that the future LLM agent will use to select analytical tools without moving computation into the language model.
+### Stage 1.4 — Agent Orchestration
+
+The agent layer now connects the question → planner → analytical engine pipeline.
+
+```text
+User question
+    ↓
+Query planner
+    ↓
+Validated QueryPlan
+    ↓
+Agent executor
+    ↓
+Analytical engine
+    ↓
+Structured result + execution trace
+```
+
+The agent does not perform numerical calculations itself. It orchestrates the existing analytical tools. The planner is dependency-injected so a future LLM can replace the deterministic planner without changing the execution layer.
+
+CLI example:
+
+```bash
+data-analyst ask data/yellow_tripdata_2025-01.parquet "What is the average fare_amount by payment_type?"
+```
 
 The project deliberately does **not** commit external datasets to the repository. See [`docs/data_sources.md`](docs/data_sources.md) for source and download guidance.
 
@@ -48,6 +73,8 @@ Data-quality engine
     ↓
 Query planning
     ↓
+Agent orchestration
+    ↓
 Analytical tools
     ├── statistics
     ├── grouped analysis
@@ -56,9 +83,9 @@ Analytical tools
     ↓
 Structured analysis results
     ↓
-[Stage 2+] AI Analyst Agent
+[Next] LLM-backed planning
     ↓
-[Stage 3+] Visualizations + evidence-backed insights
+[Later] Visualizations + evidence-backed insights
 ```
 
 ## Technology
@@ -76,4 +103,4 @@ This repository is being developed incrementally. Each stage is validated before
 
 ## Status
 
-**Stage 1.3 — Query Planning: in development**
+**Stage 1.4 — Agent Orchestration: in development**
