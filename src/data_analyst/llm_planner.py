@@ -26,6 +26,7 @@ _ALLOWED_OPERATIONS = {"profile", "quality", "describe", "aggregate", "correlati
 _ALLOWED_AGGREGATIONS = {"count", "sum", "mean", "median", "min", "max", "std"}
 _ALLOWED_FREQUENCIES = {"1h", "1d", "1w", "1mo"}
 _ALLOWED_SORTS = {"asc", "desc"}
+_MAX_LIMIT = 1000
 
 
 def _schema_context(columns, numeric_columns, datetime_columns) -> str:
@@ -57,9 +58,14 @@ def _validate_plan_payload(payload, *, question, columns, numeric_columns, datet
     if not isinstance(selected_columns, list) or not isinstance(group_by, list):
         raise LLMPlanningError("columns and group_by must be arrays.")
 
-    for name in [*selected_columns, *group_by]:
-        if name not in available:
-            raise LLMPlanningError(f"LLM referenced unknown column: {name!r}")
+    for field_name, values in (("columns", selected_columns), ("group_by", group_by)):
+        if not all(isinstance(name, str) and name for name in values):
+            raise LLMPlanningError(f"{field_name} must contain only non-empty strings.")
+        if len(values) != len(set(values)):
+            raise LLMPlanningError(f"{field_name} must not contain duplicate columns.")
+        for name in values:
+            if name not in available:
+                raise LLMPlanningError(f"LLM referenced unknown column: {name!r}")
 
     metric = payload.get("metric")
     if metric is not None:
@@ -88,23 +94,43 @@ def _validate_plan_payload(payload, *, question, columns, numeric_columns, datet
         raise LLMPlanningError(f"Unsupported sort direction: {sort_direction!r}")
 
     limit = payload.get("limit")
-    if limit is not None and (not isinstance(limit, int) or isinstance(limit, bool) or limit <= 0):
-        raise LLMPlanningError("limit must be a positive integer.")
+    if limit is not None and (
+        not isinstance(limit, int)
+        or isinstance(limit, bool)
+        or not 1 <= limit <= _MAX_LIMIT
+    ):
+        raise LLMPlanningError(f"limit must be an integer between 1 and {_MAX_LIMIT}.")
 
     assumptions = payload.get("assumptions") or []
-    if not isinstance(assumptions, list) or not all(isinstance(item, str) for item in assumptions):
-        raise LLMPlanningError("assumptions must be an array of strings.")
+    if not isinstance(assumptions, list) or not all(isinstance(item, str) and item.strip() for item in assumptions):
+        raise LLMPlanningError("assumptions must be an array of non-empty strings.")
 
-    if operation == "correlation" and len(selected_columns) < 2:
-        raise LLMPlanningError("Correlation requires at least two columns.")
-    if operation == "describe" and not selected_columns:
-        raise LLMPlanningError("Describe requires at least one column.")
-    if operation == "aggregate" and not group_by:
-        raise LLMPlanningError("Aggregate requires at least one group_by column.")
-    if operation == "aggregate" and aggregation != "count" and not metric:
-        raise LLMPlanningError("Aggregate requires a metric unless aggregation is count.")
-    if operation == "time_series" and not datetime_column:
-        raise LLMPlanningError("Time-series analysis requires datetime_column.")
+    if operation == "correlation":
+        if len(selected_columns) < 2:
+            raise LLMPlanningError("Correlation requires at least two columns.")
+        if any(name not in numeric for name in selected_columns):
+            raise LLMPlanningError("Correlation columns must all be numeric.")
+    elif operation == "describe":
+        if not selected_columns:
+            raise LLMPlanningError("Describe requires at least one column.")
+        if any(name not in numeric for name in selected_columns):
+            raise LLMPlanningError("Describe columns must all be numeric.")
+    elif operation == "aggregate":
+        if not group_by:
+            raise LLMPlanningError("Aggregate requires at least one group_by column.")
+        if aggregation is None:
+            raise LLMPlanningError("Aggregate requires an aggregation.")
+        if aggregation != "count" and not metric:
+            raise LLMPlanningError("Aggregate requires a metric unless aggregation is count.")
+    elif operation == "time_series":
+        if not datetime_column:
+            raise LLMPlanningError("Time-series analysis requires datetime_column.")
+        if aggregation is None:
+            raise LLMPlanningError("Time-series analysis requires an aggregation.")
+        if aggregation != "count" and not metric:
+            raise LLMPlanningError("Time-series analysis requires a metric unless aggregation is count.")
+        if frequency is None:
+            raise LLMPlanningError("Time-series analysis requires a frequency.")
 
     return QueryPlan(
         operation=operation,
