@@ -14,6 +14,7 @@ from typing import Any, Callable
 import polars as pl
 
 from .analysis import aggregate, correlation, describe, time_series
+from .answer import AnalystAnswer, generate_answer
 from .planner import QueryPlan, plan_query
 from .profiling import profile_dataset
 from .quality import quality_report
@@ -33,6 +34,7 @@ class AgentResponse:
     result: Any
     execution_steps: list[str] = field(default_factory=list)
     analysis_plan: AnalysisPlan | None = None
+    answer: AnalystAnswer | None = None
 
     def to_dict(self) -> dict[str, Any]:
         payload = {
@@ -43,6 +45,8 @@ class AgentResponse:
         }
         if self.analysis_plan is not None:
             payload["analysis_plan"] = self.analysis_plan.to_dict()
+        if self.answer is not None:
+            payload["answer"] = self.answer.to_dict()
         return payload
 
 
@@ -135,6 +139,7 @@ class AnalystAgent:
                 question=question,
                 plan=analysis_plan.steps[0].plan,
                 result=result,
+                answer=generate_answer(result),
                 execution_steps=[
                     "inspect_dataset_schema",
                     "plan:multi_step_reasoning",
@@ -158,6 +163,7 @@ class AnalystAgent:
             question=question,
             plan=plan,
             result=result,
+            answer=generate_answer(result),
             execution_steps=[
                 "inspect_dataset_schema",
                 f"plan:{plan.operation}",
