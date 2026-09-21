@@ -144,7 +144,10 @@ def plan_analysis(
     if not any(marker in text for marker in ("over the year", "over time", "over the month", "over the period")):
         raise ReasoningError("Multi-step request must contain an explicit time comparison.")
 
-    group_column = _find_column(question, columns)
+    numeric_set = set(numeric_columns or [])
+    datetime_set = set(datetime_columns or [])
+    group_candidates = [column for column in columns if column not in numeric_set and column not in datetime_set]
+    group_column = _find_column(question, group_candidates)
     metric = _find_column(question, numeric_columns or [])
     datetime_column = _find_column(question, datetime_columns or [])
     if not group_column or not metric or not datetime_column:
@@ -215,6 +218,34 @@ def _extract_filter_value(source_result: Any, source_column: str) -> Any:
     return value
 
 
+def _trend_summary(result: Any, metric: str) -> dict[str, Any]:
+    rows = result.get("result") if isinstance(result, dict) else None
+    if not isinstance(rows, list) or len(rows) < 2:
+        return {"status": "insufficient_data"}
+    values = [row.get(metric) for row in rows if isinstance(row, dict) and row.get(metric) is not None]
+    if len(values) < 2:
+        return {"status": "insufficient_data"}
+    first = float(values[0])
+    last = float(values[-1])
+    change = last - first
+    if change > 0:
+        direction = "increased"
+    elif change < 0:
+        direction = "decreased"
+    else:
+        direction = "unchanged"
+    percent_change = None if first == 0 else (change / first) * 100
+    return {
+        "status": "ok",
+        "metric": metric,
+        "first_value": first,
+        "last_value": last,
+        "absolute_change": change,
+        "percent_change": percent_change,
+        "direction": direction,
+    }
+
+
 def execute_analysis_plan(
     df: pl.DataFrame,
     plan: AnalysisPlan,
@@ -273,10 +304,17 @@ def execute_analysis_plan(
         if not progressed:
             raise ReasoningError("Unable to resolve analysis step dependencies.")
 
+    final_result = results[plan.final_step_id]
+    final_step = steps_by_id[plan.final_step_id]
+    trend = None
+    if final_step.plan.operation == "time_series" and final_step.plan.metric:
+        trend = _trend_summary(final_result, final_step.plan.metric)
+
     return {
         "analysis": "multi_step_reasoning",
         "question": plan.question,
         "steps": traces,
         "final_step_id": plan.final_step_id,
-        "final_result": results[plan.final_step_id],
+        "final_result": final_result,
+        "trend_summary": trend,
     }
