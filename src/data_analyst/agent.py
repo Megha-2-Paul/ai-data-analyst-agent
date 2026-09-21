@@ -17,7 +17,7 @@ from .analysis import aggregate, correlation, describe, time_series
 from .planner import QueryPlan, plan_query
 from .profiling import profile_dataset
 from .quality import quality_report
-from .reasoning import execute_analysis_plan, plan_analysis
+from .reasoning import AnalysisPlan, execute_analysis_plan, plan_analysis
 
 
 class AgentExecutionError(RuntimeError):
@@ -32,14 +32,18 @@ class AgentResponse:
     plan: QueryPlan
     result: Any
     execution_steps: list[str] = field(default_factory=list)
+    analysis_plan: AnalysisPlan | None = None
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        payload = {
             "question": self.question,
             "plan": self.plan.to_dict(),
             "result": self.result,
             "execution_steps": self.execution_steps,
         }
+        if self.analysis_plan is not None:
+            payload["analysis_plan"] = self.analysis_plan.to_dict()
+        return payload
 
 
 def _execute_plan(df: pl.DataFrame, plan: QueryPlan) -> Any:
@@ -139,6 +143,7 @@ class AnalystAgent:
                     "combine_evidence",
                     "return_structured_result",
                 ],
+                analysis_plan=analysis_plan,
             )
 
         plan = self._planner(
