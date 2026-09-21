@@ -50,6 +50,10 @@ def test_agent_executes_multi_step_reasoning():
     assert response.result["final_step_id"] == "step_2"
     assert response.result["steps"][1]["filter"]["value"] == "cash"
     assert response.result["final_result"]["analysis"] == "time_series"
+    assert response.result["trend_summary"]["direction"] == "increased"
+    assert response.result["trend_summary"]["absolute_change"] > 0
+    assert response.analysis_plan is not None
+    assert response.to_dict()["analysis_plan"]["final_step_id"] == "step_2"
     assert response.execution_steps[-1] == "return_structured_result"
 
 
