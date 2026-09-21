@@ -17,6 +17,7 @@ from .analysis import aggregate, correlation, describe, time_series
 from .planner import QueryPlan, plan_query
 from .profiling import profile_dataset
 from .quality import quality_report
+from .reasoning import AnalysisPlan, execute_analysis_plan, plan_analysis
 
 
 class AgentExecutionError(RuntimeError):
@@ -31,14 +32,18 @@ class AgentResponse:
     plan: QueryPlan
     result: Any
     execution_steps: list[str] = field(default_factory=list)
+    analysis_plan: AnalysisPlan | None = None
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        payload = {
             "question": self.question,
             "plan": self.plan.to_dict(),
             "result": self.result,
             "execution_steps": self.execution_steps,
         }
+        if self.analysis_plan is not None:
+            payload["analysis_plan"] = self.analysis_plan.to_dict()
+        return payload
 
 
 def _execute_plan(df: pl.DataFrame, plan: QueryPlan) -> Any:
@@ -111,6 +116,35 @@ class AnalystAgent:
             name for name, dtype in df.schema.items()
             if dtype in (pl.Date, pl.Datetime)
         ]
+
+        try:
+            analysis_plan = plan_analysis(
+                question,
+                columns=df.columns,
+                numeric_columns=numeric_columns,
+                datetime_columns=datetime_columns,
+            )
+        except Exception as exc:
+            # Stage 1 questions continue through the existing single-step planner.
+            from .planner import PlanningError
+            if not isinstance(exc, PlanningError):
+                raise
+        else:
+            result = execute_analysis_plan(df, analysis_plan, _execute_plan)
+            return AgentResponse(
+                question=question,
+                plan=analysis_plan.steps[0].plan,
+                result=result,
+                execution_steps=[
+                    "inspect_dataset_schema",
+                    "plan:multi_step_reasoning",
+                    *[f"validate:{step.step_id}" for step in analysis_plan.steps],
+                    *[f"execute:{step.step_id}" for step in analysis_plan.steps],
+                    "combine_evidence",
+                    "return_structured_result",
+                ],
+                analysis_plan=analysis_plan,
+            )
 
         plan = self._planner(
             question,
