@@ -9,6 +9,7 @@ import polars as pl
 from .agent import AnalystAgent
 from .analysis import aggregate, correlation, describe, time_series
 from .ingestion import load_dataset
+from .llm_planner import OpenAIPlanner
 from .planner import plan_query
 from .profiling import profile_dataset
 from .quality import quality_report
@@ -22,10 +23,19 @@ def main() -> None:
         sub = subparsers.add_parser(command)
         sub.add_argument("path", type=Path, help="Path to a CSV or Parquet dataset")
 
-    for command in ("plan", "ask"):
-        sub = subparsers.add_parser(command)
-        sub.add_argument("path", type=Path, help="Path to a CSV or Parquet dataset")
-        sub.add_argument("question", help="Natural-language analytical question")
+    plan = subparsers.add_parser("plan")
+    plan.add_argument("path", type=Path)
+    plan.add_argument("question")
+
+    ask = subparsers.add_parser("ask")
+    ask.add_argument("path", type=Path)
+    ask.add_argument("question", help="Natural-language analytical question")
+    ask.add_argument(
+        "--planner",
+        choices=["deterministic", "openai"],
+        default="deterministic",
+        help="Planner backend. OpenAI is opt-in and requires the optional llm dependency and API key.",
+    )
 
     sub = subparsers.add_parser("describe")
     sub.add_argument("path", type=Path)
@@ -52,13 +62,11 @@ def main() -> None:
     df = load_dataset(args.path)
 
     if args.command == "ask":
-        result = AnalystAgent().ask(args.question, df).to_dict()
+        planner = OpenAIPlanner() if args.planner == "openai" else plan_query
+        result = AnalystAgent(planner=planner).ask(args.question, df).to_dict()
     elif args.command == "plan":
         numeric_columns = [name for name, dtype in df.schema.items() if dtype.is_numeric()]
-        datetime_columns = [
-            name for name, dtype in df.schema.items()
-            if dtype in (pl.Date, pl.Datetime)
-        ]
+        datetime_columns = [name for name, dtype in df.schema.items() if dtype in (pl.Date, pl.Datetime)]
         result = plan_query(
             args.question,
             columns=df.columns,
