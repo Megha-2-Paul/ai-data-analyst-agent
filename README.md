@@ -1,6 +1,6 @@
 # AI Data Analyst Agent
 
-An extensible AI-powered data analysis platform designed to analyze **real-world structured datasets** using a reliable analytical engine, with an agent layer added in later stages.
+An extensible AI-powered data analysis platform designed to analyze real-world structured datasets using a reliable analytical engine, with an agent layer added incrementally.
 
 ## Project vision
 
@@ -8,13 +8,13 @@ The goal is to build an analyst that can work across different real-world datase
 
 Initial real-world validation sources:
 
-- **NYC TLC Yellow Taxi Trip Records** — primary Stage 1 dataset
-- **UDISE+ education data** from India's Open Government Data platform — later validation dataset
-- **World Bank World Development Indicators** — later API integration
+- NYC TLC Yellow Taxi Trip Records — primary Stage 1 dataset
+- UDISE+ education data — later validation dataset
+- World Bank World Development Indicators — later API integration
 
 ## Stage 1 — Foundation
 
-Stage 1 focuses on the trustworthy analytical core rather than the LLM agent itself:
+Stage 1 builds a trustworthy analytical core and the first agent orchestration layer:
 
 - CSV and Parquet ingestion
 - Dataset profiling
@@ -24,20 +24,94 @@ Stage 1 focuses on the trustworthy analytical core rather than the LLM agent its
 - DuckDB analytical queries
 - Structured, traceable analysis results
 - Natural-language query planning
+- Optional LLM-backed query planning
+- Agent orchestration and execution traces
+- Multi-step analytical reasoning with dependency-aware execution
 - Automated tests
 - Command-line interface
 
-### Stage 1.3 — Query Planning
+### Stage 1.5 — Optional LLM Planner
 
-The query-planning layer converts supported natural-language analytical requests into validated `QueryPlan` objects. It is deliberately conservative: it only references columns supplied by the dataset schema and raises an explicit planning error when a request is ambiguous or unsupported.
+The deterministic planner remains the default. Stage 1.5 adds an optional OpenAI planner at the planning boundary:
 
-This creates the contract that the future LLM agent will use to select analytical tools without moving computation into the language model.
+~~~text
+User question
+    ↓
+Planner (deterministic OR optional OpenAI)
+    ↓
+Validated QueryPlan
+    ↓
+Agent executor
+    ↓
+Analytical engine
+    ↓
+Structured result + execution trace
+~~~
 
-The project deliberately does **not** commit external datasets to the repository. See [`docs/data_sources.md`](docs/data_sources.md) for source and download guidance.
+The LLM only proposes a structured QueryPlan. It does not execute Python, SQL, or arbitrary tools. Every referenced column, operation, aggregation, datetime field, frequency, sort direction, and limit is validated before the analytical engine runs.
+
+### Zero-cost-by-default
+
+The base installation does not require the OpenAI SDK or an API key. CI tests the LLM boundary with a fake client, so tests make no network requests and do not consume API credits.
+
+Install the optional dependency only when live LLM planning is wanted:
+
+~~~bash
+pip install -e ".[llm]"
+~~~
+
+Then configure credentials in the environment:
+
+~~~bash
+export OPENAI_API_KEY="..."
+~~~
+
+Optionally choose a model:
+
+~~~bash
+export OPENAI_MODEL="gpt-5.6-luna"
+~~~
+
+Live API usage is separate from the repository's free CI/test path.
+
+CLI:
+
+~~~bash
+# Default: deterministic planner, no API call
+data-analyst ask data/yellow_tripdata_2025-01.parquet "What is the average fare_amount by payment_type?"
+
+# Optional: use the OpenAI planner
+data-analyst ask data/yellow_tripdata_2025-01.parquet "What is the average fare_amount by payment_type?" --planner openai
+~~~
+
+### Stage 2 — Multi-step Analytical Reasoning
+
+Complex analytical questions can now be decomposed into a validated dependency graph. A later step may consume a value selected by an earlier step without allowing the model to execute arbitrary code.
+
+Example:
+
+~~~text
+Which payment type has the highest average fare,
+and did that payment type's average fare increase over the year?
+
+Step 1: average fare by payment type → select highest
+Step 2: filter to selected payment type → analyze fare over time
+Step 3: compare first vs last value → summarize direction
+~~~
+
+Each step records its plan, dependencies, applied filter binding, and result. A safety cap limits a plan to eight steps, dependency cycles are rejected, and execution remains inside the existing analytical engine.
+
+The Stage 2 `ask` flow automatically detects the supported multi-step pattern; ordinary Stage 1 questions continue through the existing single-step planner.
+
+### Stage 1.4 — Agent Orchestration
+
+The agent connects the question → planner → analytical engine pipeline. The agent does not perform numerical calculations itself; it orchestrates existing analytical tools.
+
+The project deliberately does not commit external datasets to the repository. See docs/data_sources.md for source and download guidance.
 
 ## Planned architecture
 
-```text
+~~~text
 Real dataset
     ↓
 Data ingestion
@@ -48,6 +122,8 @@ Data-quality engine
     ↓
 Query planning
     ↓
+Agent orchestration
+    ↓
 Analytical tools
     ├── statistics
     ├── grouped analysis
@@ -56,10 +132,8 @@ Analytical tools
     ↓
 Structured analysis results
     ↓
-[Stage 2+] AI Analyst Agent
-    ↓
-[Stage 3+] Visualizations + evidence-backed insights
-```
+[Next] Visualizations + evidence-backed insights
+~~~
 
 ## Technology
 
@@ -69,6 +143,7 @@ Structured analysis results
 - NumPy
 - SciPy
 - Pytest
+- Optional OpenAI SDK for live LLM planning
 
 ## Development policy
 
@@ -76,4 +151,4 @@ This repository is being developed incrementally. Each stage is validated before
 
 ## Status
 
-**Stage 1.3 — Query Planning: in development**
+**Stage 2 — Multi-step Analytical Reasoning: in development**

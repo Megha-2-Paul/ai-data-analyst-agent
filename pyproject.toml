@@ -17,6 +17,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0,<9.0"]
+llm = ["openai>=1.0,<2.0"]
 
 [project.scripts]
 data-analyst = "data_analyst.cli:main"
