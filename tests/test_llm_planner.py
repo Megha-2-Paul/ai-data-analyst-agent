@@ -92,3 +92,39 @@ def test_requires_api_key_only_for_live_client(monkeypatch):
     planner = OpenAIPlanner()
     with pytest.raises(LLMPlanningError, match="OPENAI_API_KEY"):
         planner("describe revenue", columns=["revenue"], numeric_columns=["revenue"], datetime_columns=[])
+
+
+def test_rejects_non_numeric_correlation_column():
+    with pytest.raises(LLMPlanningError, match="Correlation columns must all be numeric"):
+        planner_for(schema_df(), {
+            "operation": "correlation", "columns": ["revenue", "category"], "group_by": [],
+            "metric": None, "aggregation": None, "datetime_column": None,
+            "frequency": None, "sort_direction": None, "limit": None, "assumptions": [],
+        })
+
+
+def test_rejects_duplicate_group_columns():
+    with pytest.raises(LLMPlanningError, match="duplicate"):
+        planner_for(schema_df(), {
+            "operation": "aggregate", "columns": [], "group_by": ["category", "category"],
+            "metric": "revenue", "aggregation": "mean", "datetime_column": None,
+            "frequency": None, "sort_direction": "desc", "limit": 5, "assumptions": [],
+        })
+
+
+def test_rejects_limit_above_safety_cap():
+    with pytest.raises(LLMPlanningError, match="between 1 and 1000"):
+        planner_for(schema_df(), {
+            "operation": "aggregate", "columns": [], "group_by": ["category"],
+            "metric": "revenue", "aggregation": "mean", "datetime_column": None,
+            "frequency": None, "sort_direction": "desc", "limit": 1001, "assumptions": [],
+        })
+
+
+def test_requires_complete_time_series_plan():
+    with pytest.raises(LLMPlanningError, match="requires a frequency"):
+        planner_for(schema_df(), {
+            "operation": "time_series", "columns": [], "group_by": [],
+            "metric": "revenue", "aggregation": "mean", "datetime_column": "created_at",
+            "frequency": None, "sort_direction": None, "limit": None, "assumptions": [],
+        })
