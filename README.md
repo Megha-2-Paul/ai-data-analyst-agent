@@ -26,6 +26,7 @@ Stage 1 builds a trustworthy analytical core and the first agent orchestration l
 - Natural-language query planning
 - Optional LLM-backed query planning
 - Agent orchestration and execution traces
+- Multi-step analytical reasoning with dependency-aware execution
 - Automated tests
 - Command-line interface
 
@@ -83,6 +84,25 @@ data-analyst ask data/yellow_tripdata_2025-01.parquet "What is the average fare_
 data-analyst ask data/yellow_tripdata_2025-01.parquet "What is the average fare_amount by payment_type?" --planner openai
 ~~~
 
+### Stage 2 — Multi-step Analytical Reasoning
+
+Complex analytical questions can now be decomposed into a validated dependency graph. A later step may consume a value selected by an earlier step without allowing the model to execute arbitrary code.
+
+Example:
+
+~~~text
+Which payment type has the highest average fare,
+and did that payment type's average fare increase over the year?
+
+Step 1: average fare by payment type → select highest
+Step 2: filter to selected payment type → analyze fare over time
+Step 3: compare first vs last value → summarize direction
+~~~
+
+Each step records its plan, dependencies, applied filter binding, and result. A safety cap limits a plan to eight steps, dependency cycles are rejected, and execution remains inside the existing analytical engine.
+
+The Stage 2 `ask` flow automatically detects the supported multi-step pattern; ordinary Stage 1 questions continue through the existing single-step planner.
+
 ### Stage 1.4 — Agent Orchestration
 
 The agent connects the question → planner → analytical engine pipeline. The agent does not perform numerical calculations itself; it orchestrates existing analytical tools.
@@ -131,4 +151,4 @@ This repository is being developed incrementally. Each stage is validated before
 
 ## Status
 
-**Stage 1.5 — Optional LLM Planner: in development**
+**Stage 2 — Multi-step Analytical Reasoning: in development**
