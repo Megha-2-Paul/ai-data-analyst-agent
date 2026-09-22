@@ -71,7 +71,7 @@ def main() -> None:
         response = AnalystAgent(planner=planner).ask(args.question, df)
         result = response.to_dict()
         if not args.json:
-            print(response.answer.render_text() if response.answer else "")
+            if preparation is not None:\n                print(f"Preparation: applied {len(preparation.cleaning.applied_steps)} safe step(s).")\n            print(response.answer.render_text() if response.answer else "")
             if response.answer and response.answer.evidence:
                 print("\nEvidence:")
                 for item in response.answer.evidence:
