@@ -262,7 +262,7 @@ def apply_cleaning_plan(df: pl.DataFrame, plan: CleaningPlan) -> CleaningResult:
         elif step.operation == "trim_strings":
             if step.columns:
                 working = working.with_columns(
-                    pl.col(step.columns).cast(pl.String).str.strip_chars().alias(name)
+                    pl.col(name).cast(pl.String).str.strip_chars().alias(name)
                     for name in step.columns
                 )
         elif step.operation == "empty_strings_to_null":
