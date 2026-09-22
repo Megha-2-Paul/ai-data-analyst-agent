@@ -39,8 +39,24 @@ def test_generates_evidence_backed_multi_step_answer():
 def test_generates_grouped_answer():
     response = AnalystAgent().ask("What is the average fare_amount by payment_type?", make_df())
     answer = generate_answer(response.result)
+    assert "fare_amount by payment_type" in answer.findings[0].text
+    assert len(answer.evidence) == 2
+    assert [item.values["context"] for item in answer.evidence] == [
+        "payment_type=card",
+        "payment_type=cash",
+    ]
+    assert [item.values["value"] for item in answer.evidence] == [30.0, 40.0]
+
+
+def test_grouped_answer_respects_ranking_intent():
+    response = AnalystAgent().ask(
+        "Which payment_type has the highest average fare_amount?",
+        make_df(),
+    )
+    answer = generate_answer(response.result)
     assert "highest fare_amount" in answer.findings[0].text
-    assert answer.evidence[0].values["value"] == 40.0
+    assert len(answer.evidence) == 1
+    assert answer.evidence[0].values["context"] == "payment_type=cash"
 
 
 def test_rejects_finding_without_evidence():
