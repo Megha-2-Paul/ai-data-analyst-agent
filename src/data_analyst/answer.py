@@ -8,7 +8,7 @@ values already present in the analytical result and carries evidence IDs.
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
-from typing import Any, Iterable
+from typing import Any
 
 
 class AnswerGenerationError(ValueError):
@@ -106,19 +106,66 @@ def _single_step_evidence(result: dict[str, Any], source: str = "step_1") -> tup
 
     if analysis in {"grouped_aggregation", "aggregation"}:
         rows = _rows(result)
-        metric = result.get("parameters", {}).get("metric")
+        parameters = result.get("parameters", {})
+        metric = parameters.get("metric")
+        group_columns = parameters.get("group_by", [])
         if not rows:
             return [], [], "No results were returned for the requested aggregation.", ["The analytical result contained no rows."]
-        metric_values = [(row.get(metric), row) for row in rows if metric in row and row.get(metric) is not None]
-        if metric_values:
-            best_value, best_row = max(metric_values, key=lambda item: item[0])
-            group_columns = result.get("parameters", {}).get("group_by", [])
-            context = ", ".join(f"{c}={best_row.get(c)}" for c in group_columns)
-            eid = _add(evidence, source, "highest_group", f"Highest {metric}", metric=metric, value=best_value, context=context)
-            findings.append(Finding("f1", f"The highest {metric} is {_fmt(best_value)} for {context}.", [eid]))
+        if not metric or not group_columns:
+            return [], [], "The grouped analysis completed.", ["The grouped result did not include a metric and grouping column."]
+        
+        metric_values = [
+            (row.get(metric), row)
+            for row in rows
+            if metric in row and row.get(metric) is not None
+        ]
+        if not metric_values:
+            return [], [], "The grouped analysis completed.", ["No non-null metric values were available."]
+        
+        # Respect the question's intent. A plain "by" question asks for the
+        # grouped breakdown; only explicit ranking language asks us to select
+        # one group.
+        question = str(result.get("question", "")).lower()
+        if any(term in question for term in ("highest", "largest", "maximum", "top")):
+            selected = [max(metric_values, key=lambda item: item[0])]
+            claim_type = "highest_group"
+        elif any(term in question for term in ("lowest", "smallest", "minimum", "bottom")):
+            selected = [min(metric_values, key=lambda item: item[0])]
+            claim_type = "lowest_group"
         else:
-            limitations.append("No non-null metric values were available.")
-        return evidence, findings, "The analysis returned grouped results.", limitations
+            selected = metric_values
+            claim_type = "grouped_value"
+        
+        evidence_ids: list[str] = []
+        value_parts: list[str] = []
+        for value, row in selected:
+            context = ", ".join(f"{column}={row.get(column)}" for column in group_columns)
+            eid = _add(
+                evidence,
+                source,
+                claim_type,
+                f"{metric} for {context}",
+                metric=metric,
+                value=value,
+                context=context,
+            )
+            evidence_ids.append(eid)
+            value_parts.append(f"{context}: {_fmt(value)}")
+        
+        if claim_type == "highest_group":
+            context = ", ".join(f"{column}={selected[0][1].get(column)}" for column in group_columns)
+            text = f"The highest {metric} is {_fmt(selected[0][0])} for {context}."
+            summary = text
+        elif claim_type == "lowest_group":
+            context = ", ".join(f"{column}={selected[0][1].get(column)}" for column in group_columns)
+            text = f"The lowest {metric} is {_fmt(selected[0][0])} for {context}."
+            summary = text
+        else:
+            text = f"{metric} by {', '.join(group_columns)}: " + "; ".join(value_parts) + "."
+            summary = f"The grouped analysis returned {len(selected)} {('group' if len(selected) == 1 else 'groups')} for {metric}."
+        
+        findings.append(Finding("f1", text, evidence_ids))
+        return evidence, findings, summary, limitations
 
     if analysis == "descriptive_statistics":
         rows = _rows(result)
