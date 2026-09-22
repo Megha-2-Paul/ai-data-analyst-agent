@@ -157,6 +157,8 @@ class OpenAIPlanner:
     def _get_client(self) -> Any:
         if self._client is not None:
             return self._client
+        if not os.getenv("OPENAI_API_KEY"):
+            raise LLMPlanningError("OPENAI_API_KEY is not configured.")
         try:
             from openai import OpenAI
         except ImportError as exc:
@@ -164,8 +166,6 @@ class OpenAIPlanner:
                 "OpenAI planner requires the optional 'llm' dependency. "
                 "Install with: pip install -e '.[llm]'"
             ) from exc
-        if not os.getenv("OPENAI_API_KEY"):
-            raise LLMPlanningError("OPENAI_API_KEY is not configured.")
         self._client = OpenAI()
         return self._client
 

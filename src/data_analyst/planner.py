@@ -73,7 +73,14 @@ def _find_columns(question: str, columns: Sequence[str]) -> list[str]:
         candidate = _normalize(column)
         if candidate and f" {candidate} " in normalized_question:
             matches.append(column)
-    return sorted(matches, key=lambda c: len(_normalize(c)), reverse=True)
+    # Preserve the order in which columns are named in the question.
+    # This keeps structured plans deterministic and avoids changing the user's
+    # requested correlation column order.
+    positions = {
+        column: normalized_question.find(f" {_normalize(column)} ")
+        for column in matches
+    }
+    return sorted(matches, key=lambda c: positions[c])
 
 
 def _numeric_columns(question: str, columns: Sequence[str], numeric_columns: Sequence[str] | None) -> list[str]:
@@ -174,16 +181,31 @@ def plan_query(
         )
 
     aggregation = _detect_aggregation(question)
-    if aggregation and any(term in text for term in (" by ", " per ", " each ", " grouped", "group by")):
-        group_matches = _find_columns(question, [c for c in columns if c not in mentioned_numeric])
+    grouped_intent = any(term in text for term in (" by ", " per ", " each ", " grouped", "group by"))
+    ranking_intent = any(term in text for term in ("highest", "largest", "maximum", "lowest", "smallest", "minimum", "top", "bottom"))
+    if aggregation and (grouped_intent or ranking_intent):
+        # A grouping column may be numeric in the source data (for example,
+        # NYC TLC encodes payment_type as an integer). Exclude the selected
+        # metric and datetime columns rather than assuming every numeric
+        # column is a metric.
+        ranking_intent = any(term in text for term in ("highest", "largest", "maximum", "lowest", "smallest", "minimum", "top", "bottom"))
+        # In ranking questions such as "highest average fare_amount by payment_type",
+        # the metric is usually the numeric column nearest the aggregation phrase;
+        # for ordinary "average X by Y" questions, preserve the existing first-match behavior.
+        selected_metric = (mentioned_numeric[-1] if ranking_intent else mentioned_numeric[0]) if mentioned_numeric else None
+        group_candidates = [
+            c for c in columns
+            if c != selected_metric and c not in mentioned_datetime
+        ]
+        group_matches = _find_columns(question, group_candidates)
         if not group_matches:
             raise PlanningError("Grouped analysis requires an explicitly named grouping column.")
-        if aggregation != "count" and not mentioned_numeric:
+        if aggregation != "count" and not selected_metric:
             raise PlanningError("Grouped metric analysis requires an explicitly named numeric metric.")
         return QueryPlan(
             operation="aggregate",
             group_by=[group_matches[0]],
-            metric=mentioned_numeric[0] if mentioned_numeric else None,
+            metric=selected_metric,
             aggregation=aggregation,
             sort_direction=_detect_sort(question),
             limit=_detect_limit(question),

@@ -31,6 +31,11 @@ def main() -> None:
     ask.add_argument("path", type=Path)
     ask.add_argument("question", help="Natural-language analytical question")
     ask.add_argument(
+        "--json",
+        action="store_true",
+        help="Print the complete structured agent response as JSON.",
+    )
+    ask.add_argument(
         "--planner",
         choices=["deterministic", "openai"],
         default="deterministic",
@@ -63,7 +68,27 @@ def main() -> None:
 
     if args.command == "ask":
         planner = OpenAIPlanner() if args.planner == "openai" else plan_query
-        result = AnalystAgent(planner=planner).ask(args.question, df).to_dict()
+        response = AnalystAgent(planner=planner).ask(args.question, df)
+        result = response.to_dict()
+        if not args.json:
+            print(response.answer.render_text() if response.answer else "")
+            if response.answer and response.answer.evidence:
+                print("\nEvidence:")
+                for item in response.answer.evidence:
+                    context = item.values.get("context")
+                    metric = item.values.get("metric")
+                    value = item.values.get("value")
+                    if context is not None and metric is not None and value is not None:
+                        print(f"- {context}: {metric} = {value:.2f}" if isinstance(value, float) else f"- {context}: {metric} = {value}")
+                    else:
+                        print(f"- {item.claim}")
+            if response.answer and response.answer.limitations:
+                print("\nLimitations:")
+                for limitation in response.answer.limitations:
+                    print(f"- {limitation}")
+            return
+        print(json.dumps(result, indent=2, default=str))
+        return
     elif args.command == "plan":
         numeric_columns = [name for name, dtype in df.schema.items() if dtype.is_numeric()]
         datetime_columns = [name for name, dtype in df.schema.items() if dtype in (pl.Date, pl.Datetime)]

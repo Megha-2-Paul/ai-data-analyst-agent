@@ -150,6 +150,14 @@ def plan_analysis(
     group_column = _find_column(question, group_candidates)
     metric = _find_column(question, numeric_columns or [])
     datetime_column = _find_column(question, datetime_columns or [])
+    # For a time-comparison question, it is safe to use the sole datetime
+    # column when the question says "over the year/period" without naming it.
+    # We still refuse to guess when multiple datetime columns are available.
+    datetime_candidates = list(datetime_columns or [])
+    if not datetime_column and len(datetime_candidates) == 1 and any(
+        marker in text for marker in ("over the year", "over time", "over the month", "over the period")
+    ):
+        datetime_column = datetime_candidates[0]
     if not group_column or not metric or not datetime_column:
         raise ReasoningError(
             "Multi-step request requires an explicitly named grouping, numeric metric, and datetime column."

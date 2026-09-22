@@ -103,6 +103,23 @@ Each step records its plan, dependencies, applied filter binding, and result. A 
 
 The Stage 2 `ask` flow automatically detects the supported multi-step pattern; ordinary Stage 1 questions continue through the existing single-step planner.
 
+### Stage 3 — Evidence & Answer Generation
+
+The agent now turns structured analytical results into deterministic, evidence-backed analyst answers.
+
+Each generated finding carries one or more evidence IDs. Evidence is extracted only from values already returned by the analytical engine, so Stage 3 does not introduce a second LLM generation call or invent statistics. Unsupported result types are reported explicitly rather than guessed.
+
+The answer model contains:
+
+- concise summary
+- findings with evidence references
+- structured evidence items with source step IDs and values
+- explicit limitations when results are insufficient or unsupported
+
+For multi-step analysis, Stage 3 links the selected group from the first step to the first-to-last trend from the final step.
+
+The `ask` CLI now prints the analyst-style answer first, followed by the complete structured response.
+
 ### Stage 1.4 — Agent Orchestration
 
 The agent connects the question → planner → analytical engine pipeline. The agent does not perform numerical calculations itself; it orchestrates existing analytical tools.
@@ -132,7 +149,11 @@ Analytical tools
     ↓
 Structured analysis results
     ↓
-[Next] Visualizations + evidence-backed insights
+Evidence extraction + validation
+    ↓
+Analyst answer + evidence trace
+    ↓
+[Next] Visualizations
 ~~~
 
 ## Technology
@@ -151,4 +172,4 @@ This repository is being developed incrementally. Each stage is validated before
 
 ## Status
 
-**Stage 2 — Multi-step Analytical Reasoning: in development**
+**Stage 3 — Evidence & Answer Generation: implemented**
