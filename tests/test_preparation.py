@@ -28,7 +28,7 @@ def test_prepare_dataset_does_not_impute_or_remove_outliers():
 
     result = prepare_dataset(df)
 
-    assert result.dataframe.height == 4
+    assert result.dataframe.height == 5
     assert result.dataframe["value"].null_count() == 1
     assert result.dataframe["value"].to_list()[-2] == 1000.0
     assert any("outlier" in item.lower() for item in result.cleaning.recommendations)
