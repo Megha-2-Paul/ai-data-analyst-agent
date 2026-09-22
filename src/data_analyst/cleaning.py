@@ -114,6 +114,7 @@ def build_cleaning_plan(df: pl.DataFrame) -> CleaningPlan:
     recommendations: list[str] = []
 
     normalized = _unique_names(df.columns)
+    rename_map = dict(zip(df.columns, normalized))
     if normalized != df.columns:
         steps.append(
             CleaningStep(
@@ -124,7 +125,11 @@ def build_cleaning_plan(df: pl.DataFrame) -> CleaningPlan:
         )
 
     next_id = len(steps) + 1
-    string_columns = [name for name, dtype in df.schema.items() if dtype == pl.String]
+    string_columns = [
+        rename_map.get(name, name)
+        for name, dtype in df.schema.items()
+        if dtype == pl.String
+    ]
     if string_columns:
         steps.append(
             CleaningStep(
@@ -146,12 +151,12 @@ def build_cleaning_plan(df: pl.DataFrame) -> CleaningPlan:
         next_id += 1
 
     temporal_candidates: list[str] = []
-    for name in string_columns:
-        if not _looks_temporal(name):
+    for original_name, dtype in df.schema.items():
+        if dtype != pl.String or not _looks_temporal(original_name):
             continue
-        candidate = _datetime_candidate(df.get_column(name))
+        candidate = _datetime_candidate(df.get_column(original_name))
         if candidate and candidate[1] >= 0.95:
-            temporal_candidates.append(name)
+            temporal_candidates.append(rename_map.get(original_name, original_name))
 
     if temporal_candidates:
         steps.append(
@@ -166,7 +171,8 @@ def build_cleaning_plan(df: pl.DataFrame) -> CleaningPlan:
         next_id += 1
 
     empty_columns = [
-        name for name in df.columns
+        rename_map.get(name, name)
+        for name in df.columns
         if df.get_column(name).null_count() == df.height
     ]
     if empty_columns:
