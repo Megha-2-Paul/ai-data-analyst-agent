@@ -74,8 +74,9 @@ def test_agent_response_can_include_answer():
     response = AnalystAgent().ask("What is the average fare_amount by payment_type?", make_df())
     answer = generate_answer(response.result)
     payload = answer.to_dict()
-    assert payload["findings"][0]["evidence_ids"] == ["e1"]
+    assert payload["findings"][0]["evidence_ids"] == ["e1", "e2"]
     assert payload["evidence"][0]["source_step_id"] == "step_1"
+    assert payload["evidence"][1]["source_step_id"] == "step_1"
 
 
 def test_unsupported_analysis_is_explicit():
