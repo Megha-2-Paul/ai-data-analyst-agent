@@ -73,7 +73,14 @@ def _find_columns(question: str, columns: Sequence[str]) -> list[str]:
         candidate = _normalize(column)
         if candidate and f" {candidate} " in normalized_question:
             matches.append(column)
-    return sorted(matches, key=lambda c: len(_normalize(c)), reverse=True)
+    # Preserve the order in which columns are named in the question.
+    # This keeps structured plans deterministic and avoids changing the user's
+    # requested correlation column order.
+    positions = {
+        column: normalized_question.find(f" {_normalize(column)} ")
+        for column in matches
+    }
+    return sorted(matches, key=lambda c: positions[c])
 
 
 def _numeric_columns(question: str, columns: Sequence[str], numeric_columns: Sequence[str] | None) -> list[str]:
