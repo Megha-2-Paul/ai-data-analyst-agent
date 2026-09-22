@@ -32,7 +32,8 @@ def test_generates_evidence_backed_multi_step_answer():
     assert all(f.evidence_ids for f in answer.findings)
     assert "cash" in answer.summary
     assert "increased" in answer.summary
-    assert "12.5" in answer.summary or "12.50" in answer.summary
+    # The synthetic cash series goes from 20 to 60, a 200% increase.
+    assert "200.0" in answer.summary or "200.00" in answer.summary
 
 
 def test_generates_grouped_answer():
