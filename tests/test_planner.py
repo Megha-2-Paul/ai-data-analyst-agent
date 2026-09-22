@@ -102,3 +102,15 @@ def test_does_not_invent_columns():
         datetime_columns=DATETIME,
     )
     assert all(value in COLUMNS for value in plan.group_by + ([plan.metric] if plan.metric else []))
+
+
+def test_plans_grouped_query_with_overlapping_metric_names():
+    plan = plan_query(
+        "What is the average GDP growth by country?",
+        columns=["country", "country_code", "year", "gdp_growth", "gdp", "population"],
+        numeric_columns=["year", "gdp_growth", "gdp", "population"],
+    )
+    assert plan.operation == "aggregate"
+    assert plan.group_by == ["country"]
+    assert plan.metric == "gdp_growth"
+    assert plan.aggregation == "mean"
