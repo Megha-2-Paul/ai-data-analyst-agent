@@ -126,10 +126,11 @@ def _single_step_evidence(result: dict[str, Any], source: str = "step_1") -> tup
         # grouped breakdown; only explicit ranking language asks us to select
         # one group.
         question = str(result.get("question", "")).lower()
-        if any(term in question for term in ("highest", "largest", "maximum", "top")):
+        sort_direction = parameters.get("sort_direction")
+        if sort_direction == "desc" or any(term in question for term in ("highest", "largest", "maximum", "top")):
             selected = [max(metric_values, key=lambda item: item[0])]
             claim_type = "highest_group"
-        elif any(term in question for term in ("lowest", "smallest", "minimum", "bottom")):
+        elif sort_direction == "asc" or any(term in question for term in ("lowest", "smallest", "minimum", "bottom")):
             selected = [min(metric_values, key=lambda item: item[0])]
             claim_type = "lowest_group"
         else:
