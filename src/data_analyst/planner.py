@@ -181,7 +181,9 @@ def plan_query(
         )
 
     aggregation = _detect_aggregation(question)
-    if aggregation and any(term in text for term in (" by ", " per ", " each ", " grouped", "group by")):
+    grouped_intent = any(term in text for term in (" by ", " per ", " each ", " grouped", "group by"))
+    ranking_intent = any(term in text for term in ("highest", "largest", "maximum", "lowest", "smallest", "minimum", "top", "bottom"))
+    if aggregation and (grouped_intent or ranking_intent):
         # A grouping column may be numeric in the source data (for example,
         # NYC TLC encodes payment_type as an integer). Exclude the selected
         # metric and datetime columns rather than assuming every numeric
