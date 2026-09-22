@@ -66,7 +66,7 @@ def main() -> None:
         response = AnalystAgent(planner=planner).ask(args.question, df)
         result = response.to_dict()
         print(response.answer.render_text() if response.answer else "")
-        print("\\nStructured evidence:")
+        print("\nStructured evidence:")
     elif args.command == "plan":
         numeric_columns = [name for name, dtype in df.schema.items() if dtype.is_numeric()]
         datetime_columns = [name for name, dtype in df.schema.items() if dtype in (pl.Date, pl.Datetime)]
