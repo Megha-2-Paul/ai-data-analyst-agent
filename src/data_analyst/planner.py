@@ -182,15 +182,24 @@ def plan_query(
 
     aggregation = _detect_aggregation(question)
     if aggregation and any(term in text for term in (" by ", " per ", " each ", " grouped", "group by")):
-        group_matches = _find_columns(question, [c for c in columns if c not in mentioned_numeric])
+        # A grouping column may be numeric in the source data (for example,
+        # NYC TLC encodes payment_type as an integer). Exclude the selected
+        # metric and datetime columns rather than assuming every numeric
+        # column is a metric.
+        selected_metric = mentioned_numeric[0] if mentioned_numeric else None
+        group_candidates = [
+            c for c in columns
+            if c != selected_metric and c not in mentioned_datetime
+        ]
+        group_matches = _find_columns(question, group_candidates)
         if not group_matches:
             raise PlanningError("Grouped analysis requires an explicitly named grouping column.")
-        if aggregation != "count" and not mentioned_numeric:
+        if aggregation != "count" and not selected_metric:
             raise PlanningError("Grouped metric analysis requires an explicitly named numeric metric.")
         return QueryPlan(
             operation="aggregate",
             group_by=[group_matches[0]],
-            metric=mentioned_numeric[0] if mentioned_numeric else None,
+            metric=selected_metric,
             aggregation=aggregation,
             sort_direction=_detect_sort(question),
             limit=_detect_limit(question),
