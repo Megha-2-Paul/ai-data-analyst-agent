@@ -48,6 +48,17 @@ def test_generates_grouped_answer():
     assert [item.values["value"] for item in answer.evidence] == [30.0, 40.0]
 
 
+def test_ranking_question_selects_metric_not_group_code():
+    response = AnalystAgent().ask(
+        "Which payment_type has the highest average fare_amount?",
+        make_df(),
+    )
+    assert response.plan.metric == "fare_amount"
+    assert response.plan.group_by == ["payment_type"]
+    assert response.plan.sort_direction == "desc"
+    assert response.result["parameters"]["metric"] == "fare_amount"
+
+
 def test_grouped_answer_respects_ranking_intent():
     response = AnalystAgent().ask(
         "Which payment_type has the highest average fare_amount?",
