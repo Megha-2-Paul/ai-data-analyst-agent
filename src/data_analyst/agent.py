@@ -90,6 +90,10 @@ def _execute_plan(df: pl.DataFrame, plan: QueryPlan) -> Any:
             metric=plan.metric,
             agg=plan.aggregation or "mean",
         )
+        if plan.sort_direction:
+            result["parameters"]["sort_direction"] = plan.sort_direction
+        if plan.limit:
+            result["parameters"]["limit"] = plan.limit
         if plan.sort_direction and isinstance(result.get("result"), list):
             rows = result["result"]
             rows.sort(
