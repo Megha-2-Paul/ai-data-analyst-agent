@@ -24,7 +24,7 @@ def test_prepare_dataset_returns_before_after_reports_without_mutating_input():
 
 
 def test_prepare_dataset_does_not_impute_or_remove_outliers():
-    df = pl.DataFrame({"value": [1.0, 2.0, 1000.0, None]})
+    df = pl.DataFrame({"value": [1.0, 2.0, 3.0, 1000.0, None]})
 
     result = prepare_dataset(df)
 
