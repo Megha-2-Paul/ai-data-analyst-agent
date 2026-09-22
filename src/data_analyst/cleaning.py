@@ -229,7 +229,7 @@ def build_cleaning_plan(df: pl.DataFrame) -> CleaningPlan:
 def validate_cleaning_plan(plan: CleaningPlan, columns: Sequence[str]) -> CleaningPlan:
     """Validate a cleaning plan before any transformation is applied."""
 
-    known = set(columns)
+    current_columns = list(columns)
     seen_ids: set[str] = set()
     for step in plan.steps:
         if step.step_id in seen_ids:
@@ -239,11 +239,16 @@ def validate_cleaning_plan(plan: CleaningPlan, columns: Sequence[str]) -> Cleani
             raise CleaningError(
                 f"Unsupported automatic cleaning operation: {step.operation!r}"
             )
-        unknown = set(step.columns) - known
-        if unknown and step.operation != "normalize_column_names":
+
+        unknown = set(step.columns) - set(current_columns)
+        if unknown:
             raise CleaningError(
                 f"Cleaning step {step.step_id!r} references unknown columns: {sorted(unknown)}"
             )
+
+        if step.operation == "normalize_column_names":
+            current_columns = _unique_names(current_columns)
+
     return plan
 
 
