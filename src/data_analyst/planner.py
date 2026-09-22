@@ -80,7 +80,13 @@ def _find_columns(question: str, columns: Sequence[str]) -> list[str]:
         column: normalized_question.find(f" {_normalize(column)} ")
         for column in matches
     }
-    return sorted(matches, key=lambda c: positions[c])
+    # Prefer the more specific column when names overlap, such as
+    # gdp and gdp_growth. Both occur at the same position in
+    # "average GDP growth", but gdp_growth is the intended metric.
+    return sorted(
+        matches,
+        key=lambda c: (positions[c], -len(_normalize(c))),
+    )
 
 
 def _numeric_columns(question: str, columns: Sequence[str], numeric_columns: Sequence[str] | None) -> list[str]:
