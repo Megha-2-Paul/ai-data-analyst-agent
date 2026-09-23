@@ -21,10 +21,11 @@ class LLMPlanningError(PlanningError):
 _QUERY_PLAN_FIELDS = {
     "operation", "columns", "group_by", "metric", "aggregation",
     "datetime_column", "frequency", "sort_direction", "limit", "assumptions",
+    "filter_column", "filter_value",
 }
 _ALLOWED_OPERATIONS = {"profile", "quality", "describe", "aggregate", "correlation", "time_series"}
 _ALLOWED_AGGREGATIONS = {"count", "sum", "mean", "median", "min", "max", "std"}
-_ALLOWED_FREQUENCIES = {"1h", "1d", "1w", "1mo"}
+_ALLOWED_FREQUENCIES = {"1h", "1d", "1w", "1mo", "1y"}
 _ALLOWED_SORTS = {"asc", "desc"}
 _MAX_LIMIT = 1000
 
@@ -74,12 +75,26 @@ def _validate_plan_payload(payload, *, question, columns, numeric_columns, datet
         if metric not in numeric:
             raise LLMPlanningError(f"LLM metric must be numeric: {metric!r}")
 
+    filter_column = payload.get("filter_column")
+    filter_value = payload.get("filter_value")
+    if filter_column is not None:
+        if filter_column not in available:
+            raise LLMPlanningError(f"LLM referenced unknown filter column: {filter_column!r}")
+        if not isinstance(filter_column, str) or not filter_column:
+            raise LLMPlanningError("filter_column must be a non-empty string.")
+        if filter_value is None or not isinstance(filter_value, (str, int, float, bool)):
+            raise LLMPlanningError("filter_value must be a simple scalar when filter_column is provided.")
+
     datetime_column = payload.get("datetime_column")
     if datetime_column is not None:
         if datetime_column not in available:
             raise LLMPlanningError(f"LLM referenced unknown datetime column: {datetime_column!r}")
-        if datetime_column not in datetimes:
-            raise LLMPlanningError(f"LLM datetime_column must be a datetime column: {datetime_column!r}")
+        if datetime_column not in datetimes and not (
+            datetime_column in numeric and datetime_column == "year"
+        ):
+            raise LLMPlanningError(
+                f"LLM datetime_column must be a datetime column or integer year column: {datetime_column!r}"
+            )
 
     aggregation = payload.get("aggregation")
     if aggregation is not None and aggregation not in _ALLOWED_AGGREGATIONS:
@@ -144,6 +159,8 @@ def _validate_plan_payload(payload, *, question, columns, numeric_columns, datet
         limit=limit,
         question=question,
         assumptions=assumptions,
+        filter_column=filter_column,
+        filter_value=filter_value,
     )
 
 
@@ -190,7 +207,7 @@ class OpenAIPlanner:
             "Allowed aggregations: count, sum, mean, median, min, max, std.\n"
             "Allowed frequencies: 1h, 1d, 1w, 1mo.\n"
             "Return JSON fields: operation, columns, group_by, metric, aggregation, "
-            "datetime_column, frequency, sort_direction, limit, assumptions."
+            "datetime_column, frequency, sort_direction, limit, assumptions, filter_column, filter_value."
         )
         try:
             response = client.responses.create(
