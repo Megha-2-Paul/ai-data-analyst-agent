@@ -195,10 +195,11 @@ def plan_query(
         # metric and datetime columns rather than assuming every numeric
         # column is a metric.
         ranking_intent = any(term in text for term in ("highest", "largest", "maximum", "lowest", "smallest", "minimum", "top", "bottom"))
-        # In ranking questions such as "highest average fare_amount by payment_type",
-        # the metric is usually the numeric column nearest the aggregation phrase;
-        # for ordinary "average X by Y" questions, preserve the existing first-match behavior.
-        selected_metric = (mentioned_numeric[-1] if ranking_intent else mentioned_numeric[0]) if mentioned_numeric else None
+        # _find_columns already prefers the most specific overlapping name
+        # (for example, gdp_growth over gdp). Use that first match as the
+        # metric for ranking questions instead of the last match, which can
+        # incorrectly select a shorter overlapping name such as gdp.
+        selected_metric = mentioned_numeric[0] if mentioned_numeric else None
         group_candidates = [
             c for c in columns
             if c != selected_metric and c not in mentioned_datetime
