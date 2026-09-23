@@ -54,6 +54,7 @@ def test_accepts_safe_structured_plan():
         "operation": "aggregate", "columns": [], "group_by": ["category"],
         "metric": "revenue", "aggregation": "mean", "datetime_column": None,
         "frequency": None, "sort_direction": "desc", "limit": 5, "assumptions": [],
+        "filter_column": None, "filter_value": None,
     })
     assert plan.operation == "aggregate"
     assert plan.group_by == ["category"]
