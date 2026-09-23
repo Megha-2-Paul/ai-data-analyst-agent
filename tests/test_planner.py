@@ -115,3 +115,18 @@ def test_plans_grouped_query_with_overlapping_metric_names():
     assert plan.group_by == ["country"]
     assert plan.metric == "gdp_growth"
     assert plan.aggregation == "mean"
+
+
+
+def test_plans_ranking_query_with_overlapping_metric_names():
+    plan = plan_query(
+        "Which country has the highest average GDP growth?",
+        columns=["country", "country_code", "year", "gdp_growth", "gdp", "population"],
+        numeric_columns=["year", "gdp_growth", "gdp", "population"],
+        datetime_columns=[],
+    )
+    assert plan.operation == "aggregate"
+    assert plan.group_by == ["country"]
+    assert plan.metric == "gdp_growth"
+    assert plan.aggregation == "mean"
+    assert plan.sort_direction == "desc"
