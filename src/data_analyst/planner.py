@@ -90,12 +90,12 @@ def _find_columns(question: str, columns: Sequence[str]) -> list[str]:
 
 
 def _numeric_columns(question: str, columns: Sequence[str], numeric_columns: Sequence[str] | None) -> list[str]:
-    candidates = list(numeric_columns or columns)
+    candidates = list(columns if numeric_columns is None else numeric_columns)
     return [c for c in _find_columns(question, candidates)]
 
 
 def _datetime_columns(question: str, columns: Sequence[str], datetime_columns: Sequence[str] | None) -> list[str]:
-    candidates = list(datetime_columns or columns)
+    candidates = list(columns if datetime_columns is None else datetime_columns)
     return [c for c in _find_columns(question, candidates)]
 
 
