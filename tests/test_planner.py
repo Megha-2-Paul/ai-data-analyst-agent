@@ -130,3 +130,19 @@ def test_plans_ranking_query_with_overlapping_metric_names():
     assert plan.metric == "gdp_growth"
     assert plan.aggregation == "mean"
     assert plan.sort_direction == "desc"
+
+
+def test_plans_filtered_year_time_series():
+    plan = plan_query(
+        "How did India's GDP growth change over the years?",
+        columns=["country", "country_code", "year", "gdp_growth", "gdp", "population"],
+        numeric_columns=["year", "gdp_growth", "gdp", "population"],
+        datetime_columns=[],
+    )
+    assert plan.operation == "time_series"
+    assert plan.datetime_column == "year"
+    assert plan.metric == "gdp_growth"
+    assert plan.aggregation == "mean"
+    assert plan.frequency == "1y"
+    assert plan.filter_column == "country"
+    assert plan.filter_value == "India"
