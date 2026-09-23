@@ -40,6 +40,8 @@ class QueryPlan:
     limit: int | None = None
     question: str = ""
     assumptions: list[str] = field(default_factory=list)
+    filter_column: str | None = None
+    filter_value: Any | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -117,6 +119,8 @@ def _detect_frequency(question: str) -> str | None:
         return "1mo"
     if any(word in text.split() for word in ("day", "daily")):
         return "1d"
+    if any(word in text.split() for word in ("year", "years", "yearly", "annual", "annually")):
+        return "1y"
     return None
 
 
@@ -172,18 +176,36 @@ def plan_query(
             question=question,
         )
 
-    if any(term in text for term in ("trend", "over time", "time series", "by day", "daily", "by week", "weekly", "by month", "monthly")):
-        if not mentioned_datetime:
-            raise PlanningError("Time-series analysis requires an explicitly named date/datetime column.")
+    if any(term in text for term in ("trend", "over time", "time series", "by day", "daily", "by week", "weekly", "by month", "monthly", "over the years", "over years", "yearly", "annual")):
+        temporal_column = mentioned_datetime[0] if mentioned_datetime else None
+        if temporal_column is None:
+            year_columns = [c for c in columns if _normalize(c) == "year"]
+            if len(year_columns) == 1 and any(term in text for term in ("year", "years", "yearly", "annual", "over time")):
+                temporal_column = year_columns[0]
+        if temporal_column is None:
+            raise PlanningError("Time-series analysis requires an explicitly named date/datetime column or year column.")
         metric = mentioned_numeric[0] if mentioned_numeric else None
         aggregation = _detect_aggregation(question) or "count"
+
+        filter_column = None
+        filter_value = None
+        non_numeric = [c for c in columns if c not in set(numeric_columns or []) and c not in set(datetime_columns or [])]
+        country_columns = [c for c in non_numeric if _normalize(c) in ("country", "country name")]
+        if country_columns:
+            match = re.search(r"\b([A-Za-z][A-Za-z ._-]{1,60})'s\s+", question)
+            if match:
+                filter_column = country_columns[0]
+                filter_value = match.group(1).strip()
+
         return QueryPlan(
             operation="time_series",
-            datetime_column=mentioned_datetime[0],
+            datetime_column=temporal_column,
             metric=metric,
             aggregation=aggregation,
             frequency=_detect_frequency(question) or "1d",
             question=question,
+            filter_column=filter_column,
+            filter_value=filter_value,
         )
 
     aggregation = _detect_aggregation(question)
