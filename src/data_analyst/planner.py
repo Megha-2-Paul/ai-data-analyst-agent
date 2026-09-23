@@ -203,7 +203,25 @@ def plan_query(
             c for c in columns
             if c != selected_metric and c not in mentioned_datetime
         ]
-        group_matches = _find_columns(question, group_candidates)
+
+        # Prefer columns explicitly named as the grouping dimension after
+        # "by", "per", or "each". This prevents metric-name fragments such
+        # as "GDP" from being mistaken for the grouping column in questions
+        # like "average GDP growth by country".
+        group_matches = []
+        grouping_pattern = re.compile(
+            r"\b(?:by|per|each)\s+(.+?)(?=\s+(?:and|with|over|for)\b|[?,.]|$)",
+            re.IGNORECASE,
+        )
+        for match in grouping_pattern.finditer(question):
+            group_text = match.group(1)
+            candidates = _find_columns(group_text, group_candidates)
+            if candidates:
+                group_matches.extend(candidates)
+
+        if not group_matches:
+            group_matches = _find_columns(question, group_candidates)
+
         if not group_matches:
             raise PlanningError("Grouped analysis requires an explicitly named grouping column.")
         if aggregation != "count" and not selected_metric:
