@@ -73,3 +73,26 @@ def test_agent_serializes_trace():
         "execute_analysis",
         "return_structured_result",
     ]
+
+
+def test_agent_executes_filtered_year_time_series():
+    df = pl.DataFrame({
+        "country": ["India", "India", "USA", "India"],
+        "year": [2020, 2021, 2020, 2022],
+        "gdp_growth": [3.0, 4.0, 2.0, 5.0],
+    })
+    response = AnalystAgent().ask(
+        "How did India's GDP growth change over the years?",
+        df,
+    )
+    assert response.plan.operation == "time_series"
+    assert response.plan.datetime_column == "year"
+    assert response.plan.metric == "gdp_growth"
+    assert response.plan.filter_column == "country"
+    assert response.plan.filter_value == "India"
+    assert response.result["analysis"] == "time_series"
+    assert response.result["result"] == [
+        {"year": 2020, "gdp_growth": 3.0},
+        {"year": 2021, "gdp_growth": 4.0},
+        {"year": 2022, "gdp_growth": 5.0},
+    ]

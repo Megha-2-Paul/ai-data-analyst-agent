@@ -73,3 +73,22 @@ def test_time_series_can_aggregate_metric():
     df = pl.DataFrame({"timestamp": [datetime(2025, 1, 1, 10), datetime(2025, 1, 1, 10, 30)], "sales": [10.0, 30.0]})
     result = time_series(df, datetime_column="timestamp", frequency="1h", metric="sales", agg="mean")
     assert result["result"][0]["sales"] == 20.0
+
+
+def test_time_series_supports_integer_year():
+    df = pl.DataFrame({
+        "year": [2020, 2021, 2022],
+        "gdp_growth": [3.0, 4.0, 5.0],
+    })
+    result = time_series(
+        df,
+        datetime_column="year",
+        frequency="1y",
+        metric="gdp_growth",
+        agg="mean",
+    )
+    assert result["result"] == [
+        {"year": 2020, "gdp_growth": 3.0},
+        {"year": 2021, "gdp_growth": 4.0},
+        {"year": 2022, "gdp_growth": 5.0},
+    ]

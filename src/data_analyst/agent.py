@@ -51,6 +51,15 @@ class AgentResponse:
 
 
 def _execute_plan(df: pl.DataFrame, plan: QueryPlan) -> Any:
+    if plan.filter_column:
+        if plan.filter_column not in df.columns:
+            raise AgentExecutionError(f"Filter column not found: {plan.filter_column!r}")
+        if plan.filter_value is None:
+            raise AgentExecutionError("Filter column is set but filter value is missing.")
+        value = plan.filter_value
+        matches = df.get_column(plan.filter_column).cast(pl.String).str.to_lowercase() == str(value).lower()
+        df = df.filter(matches)
+
     if plan.operation == "profile":
         return profile_dataset(df)
     if plan.operation == "quality":

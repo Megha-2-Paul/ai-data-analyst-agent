@@ -118,7 +118,54 @@ The answer model contains:
 
 For multi-step analysis, Stage 3 links the selected group from the first step to the first-to-last trend from the final step.
 
-The `ask` CLI now prints the analyst-style answer first, followed by the complete structured response.
+The `ask` CLI prints the analyst-style answer first. Use `--json` for the complete structured response.
+
+
+### Stage 4 — Data Preparation
+
+Stage 4 adds a dataset-agnostic preparation layer that can run before analysis when explicitly requested.
+
+Safe automatic transformations include:
+
+- normalize column names to stable snake_case names
+- trim leading/trailing whitespace from strings
+- convert blank strings to null
+- parse obvious datetime columns when at least 95% of non-null values parse successfully
+- drop completely empty columns
+
+Statistical or domain-dependent issues are reported as recommendations rather than silently changed:
+
+- missing-value imputation
+- row deletion due to missing values
+- outlier removal
+- exact duplicate removal
+- domain-specific validity corrections
+
+Every preparation run retains:
+
+- original profile
+- original quality report
+- validated cleaning plan
+- applied transformation trace
+- recommendations
+- prepared profile
+- prepared quality report
+
+The source dataframe is never mutated or overwritten.
+
+CLI:
+
+~~~powershell
+data-analyst prepare data/raw/yellow_tripdata_2025-01.parquet
+~~~
+
+Safe preparation can also be applied before an analytical question:
+
+~~~powershell
+data-analyst ask data/raw/yellow_tripdata_2025-01.parquet "What is the average fare_amount by payment_type?" --prepare
+~~~
+
+Use `--json` with `ask` to inspect the complete structured response, including the preparation trace when `--prepare` is used.
 
 ### Stage 1.4 — Agent Orchestration
 
@@ -153,6 +200,14 @@ Evidence extraction + validation
     ↓
 Analyst answer + evidence trace
     ↓
+[Stage 4] Safe data preparation
+    ↓
+Prepared dataset
+    ↓
+Validated analysis
+    ↓
+Analyst answer + evidence trace
+    ↓
 [Next] Visualizations
 ~~~
 
@@ -172,4 +227,4 @@ This repository is being developed incrementally. Each stage is validated before
 
 ## Status
 
-**Stage 3 — Evidence & Answer Generation: implemented**
+**Stage 4 — Data Preparation: implementation in progress**
