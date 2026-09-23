@@ -99,13 +99,32 @@ def correlation(df: pl.DataFrame, columns: Sequence[str] | None = None) -> dict[
 
 
 def time_series(df: pl.DataFrame, *, datetime_column: str, frequency: str = "1d", metric: str | None = None, agg: str = "count") -> dict[str, Any]:
-    """Aggregate records over a Date/Datetime column."""
+    """Aggregate records over a Date/Datetime column or an integer year column."""
     _require_columns(df, [datetime_column] + ([metric] if metric else []))
-    if df.schema[datetime_column] not in (pl.Date, pl.Datetime):
-        raise ValueError(f"Time analysis requires a Date or Datetime column: '{datetime_column}'")
     if agg not in SUPPORTED_AGGREGATIONS:
         raise ValueError(f"Unsupported aggregation '{agg}'. Choose from: {', '.join(sorted(SUPPORTED_AGGREGATIONS))}")
+
     metric_name = metric or "row_count"
-    expression = pl.len().alias(metric_name) if agg == "count" and metric is None else (pl.col(metric).count().alias(metric_name) if agg == "count" else getattr(pl.col(metric), agg)().alias(metric_name))
-    result = df.sort(datetime_column).group_by_dynamic(datetime_column, every=frequency).agg(expression).sort(datetime_column).to_dicts()
-    return _result("time_series", {"datetime_column": datetime_column, "frequency": frequency, "metric": metric, "aggregation": agg}, result)
+    expression = (
+        pl.len().alias(metric_name)
+        if agg == "count" and metric is None
+        else (pl.col(metric).count().alias(metric_name) if agg == "count" else getattr(pl.col(metric), agg)().alias(metric_name))
+    )
+
+    dtype = df.schema[datetime_column]
+    if dtype in (pl.Date, pl.Datetime):
+        result = df.sort(datetime_column).group_by_dynamic(
+            datetime_column, every=frequency
+        ).agg(expression).sort(datetime_column).to_dicts()
+    elif dtype in (pl.Int8, pl.Int16, pl.Int32, pl.Int64, pl.UInt8, pl.UInt16, pl.UInt32, pl.UInt64) and frequency == "1y":
+        result = df.group_by(datetime_column, maintain_order=True).agg(expression).sort(datetime_column).to_dicts()
+    else:
+        raise ValueError(
+            f"Time analysis requires a Date/Datetime column or an integer year column: '{datetime_column}'"
+        )
+
+    return _result(
+        "time_series",
+        {"datetime_column": datetime_column, "frequency": frequency, "metric": metric, "aggregation": agg},
+        result,
+    )
