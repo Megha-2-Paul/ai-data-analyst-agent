@@ -186,17 +186,22 @@ def plan_query(
             raise PlanningError("Time-series analysis requires an explicitly named date/datetime column or year column.")
         metric_candidates = [column for column in mentioned_numeric if column != temporal_column]
         metric = metric_candidates[0] if metric_candidates else None
-        aggregation = _detect_aggregation(question) or "count"
+        aggregation = _detect_aggregation(question)
+    if aggregation is None and metric_candidates:
+        aggregation = "mean"
 
         filter_column = None
         filter_value = None
         non_numeric = [c for c in columns if c not in set(numeric_columns or []) and c not in set(datetime_columns or [])]
         country_columns = [c for c in non_numeric if _normalize(c) in ("country", "country name")]
         if country_columns:
-            match = re.search(r"\b([A-Za-z][A-Za-z ._-]{1,60})'s\s+", question)
+            match = re.search(r"\b([A-Za-z][A-Za-z ._-]{0,60})'s\s+", question)
             if match:
-                filter_column = country_columns[0]
-                filter_value = match.group(1).strip()
+                candidate = match.group(1).strip()
+                candidate = re.sub(r"^(?:how|what|when|where|why|did|does|has|have|is|was|were)\s+", "", candidate, flags=re.IGNORECASE).strip()
+                if candidate:
+                    filter_column = country_columns[0]
+                    filter_value = candidate
 
         return QueryPlan(
             operation="time_series",
