@@ -205,7 +205,7 @@ class OpenAIPlanner:
             f"Dataset schema: {_schema_context(columns, numeric_columns, datetime_columns)}\n"
             "Allowed operations: profile, quality, describe, aggregate, correlation, time_series.\n"
             "Allowed aggregations: count, sum, mean, median, min, max, std.\n"
-            "Allowed frequencies: 1h, 1d, 1w, 1mo.\n"
+            "Allowed frequencies: 1h, 1d, 1w, 1mo, 1y.\n"
             "Return JSON fields: operation, columns, group_by, metric, aggregation, "
             "datetime_column, frequency, sort_direction, limit, assumptions, filter_column, filter_value."
         )
