@@ -184,7 +184,8 @@ def plan_query(
                 temporal_column = year_columns[0]
         if temporal_column is None:
             raise PlanningError("Time-series analysis requires an explicitly named date/datetime column or year column.")
-        metric = mentioned_numeric[0] if mentioned_numeric else None
+        metric_candidates = [column for column in mentioned_numeric if column != temporal_column]
+        metric = metric_candidates[0] if metric_candidates else None
         aggregation = _detect_aggregation(question) or "count"
 
         filter_column = None
