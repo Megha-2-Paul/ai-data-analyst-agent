@@ -27,20 +27,26 @@ Stage 1 focuses on the trustworthy analytical core rather than the LLM agent its
 - Automated tests
 - Command-line interface
 
-### Stage 1.3 — Query Planning
+### Stage 1.3 — Query Planning (Complete)
 
-The query-planning layer converts supported natural-language analytical requests into validated `QueryPlan` objects. It is deliberately conservative: it only references columns supplied by the dataset schema and raises an explicit planning error when a request is ambiguous or unsupported.
+Stage 1.3 is complete and merged into GitHub `main` by PR #10. The deterministic planner converts supported natural-language requests into validated `QueryPlan` objects using only columns supplied by the dataset schema. It rejects ambiguous or unsupported requests, recognizes supported time frequencies, and records defaults when a frequency is omitted.
 
-Stage 1.3 generates plans only. The `plan` CLI command returns a JSON plan and does not execute an analysis.
+The planner plans; it does not execute analysis. The `plan` CLI command returns a JSON plan. The analytical engine remains responsible for validation and computation.
 
-This creates the contract that the future LLM agent will use to select analytical tools without moving computation into the language model.
+The Stage 1.3 fix commit is `3a704c4a4f77b645eaaea92e7d458668f67783a6`; the GitHub merge commit is `0e322ace92e28e6dc945a5c5081a2bf8a27602ac`.
+
+### Stage 1.4 — Optional Groq Integration (Planned)
+
+Stage 1.4 is planned, not implemented. Groq may be added as an optional aid for interpreting questions, proposing query plans, and formulating explanations grounded in actual analytical results. The existing Python engine must remain authoritative for schema validation, execution, and numerical results. AI must not invent columns or data, and deterministic operation without an AI service must remain available.
+
+API keys will be kept outside source control. The integration will need explicit handling for unavailable services, malformed responses, rate limits, and other API errors. Stage 1.4 requires its own approved plan, implementation, and test cycle; this repository currently has no Groq integration or LLM agent.
 
 The project deliberately does **not** commit external datasets to the repository. See [`docs/data_sources.md`](docs/data_sources.md) for source and download guidance.
 
-## Planned architecture
+## Architecture and roadmap
 
 ```text
-Real dataset
+Real-world dataset
     ↓
 Data ingestion
     ↓
@@ -48,9 +54,9 @@ Dataset profiling
     ↓
 Data-quality engine
     ↓
-Query planning
+Deterministic query planning (implemented)
     ↓
-Analytical tools
+Deterministic analytical tools
     ├── statistics
     ├── grouped analysis
     ├── time-series analysis
@@ -58,10 +64,12 @@ Analytical tools
     ↓
 Structured analysis results
     ↓
-[Stage 2+] AI Analyst Agent
+[Stage 1.4, planned] Optional Groq-assisted interpretation and explanations
     ↓
-[Stage 3+] Visualizations + evidence-backed insights
+[Later, planned] Visualizations and evidence-backed insights
 ```
+
+Only the ingestion, profiling, quality, analysis, result, CLI, and deterministic planning layers are implemented in the current Stage 1 foundation. Groq, an AI agent, visualization, and evidence-grounded explanation features are future work.
 
 ## Technology
 
@@ -74,8 +82,10 @@ Structured analysis results
 
 ## Development policy
 
-This repository is being developed incrementally. Each stage is validated before the next layer is introduced. External data remains attributed to its original publisher.
+This repository is being developed incrementally. Each stage is validated before the next layer is introduced. External data remains attributed to its original publisher. See [Development Workflow](docs/WORKFLOW.md) for the collaboration, approval, Git safety, and validation process.
 
 ## Status
 
-**Stage 1.3 — Query Planning: in development**
+**Stage 1.3 — Query Planning: complete and merged into `main`**
+
+**Stage 1.4 — Optional Groq Integration: planned, not implemented**
