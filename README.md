@@ -31,6 +31,8 @@ Stage 1 focuses on the trustworthy analytical core rather than the LLM agent its
 
 The query-planning layer converts supported natural-language analytical requests into validated `QueryPlan` objects. It is deliberately conservative: it only references columns supplied by the dataset schema and raises an explicit planning error when a request is ambiguous or unsupported.
 
+Stage 1.3 generates plans only. The `plan` CLI command returns a JSON plan and does not execute an analysis.
+
 This creates the contract that the future LLM agent will use to select analytical tools without moving computation into the language model.
 
 The project deliberately does **not** commit external datasets to the repository. See [`docs/data_sources.md`](docs/data_sources.md) for source and download guidance.
