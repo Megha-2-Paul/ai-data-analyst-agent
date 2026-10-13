@@ -56,6 +56,11 @@ def test_aggregate_rejects_unknown_operation(df):
         aggregate(df, group_by=["region"], metric="sales", agg="mode")
 
 
+def test_aggregate_requires_metric_for_non_count_operation(df):
+    with pytest.raises(ValueError, match="metric is required"):
+        aggregate(df, group_by=["region"], metric=None, agg="mean")
+
+
 def test_correlation_returns_numeric_matrix(df):
     result = correlation(df, ["sales"])
     assert result["analysis"] == "correlation"
@@ -73,3 +78,29 @@ def test_time_series_can_aggregate_metric():
     df = pl.DataFrame({"timestamp": [datetime(2025, 1, 1, 10), datetime(2025, 1, 1, 10, 30)], "sales": [10.0, 30.0]})
     result = time_series(df, datetime_column="timestamp", frequency="1h", metric="sales", agg="mean")
     assert result["result"][0]["sales"] == 20.0
+
+
+def test_time_series_supports_yearly_polars_interval():
+    df = pl.DataFrame(
+        {
+            "timestamp": [
+                datetime(2023, 6, 1),
+                datetime(2023, 12, 1),
+                datetime(2024, 7, 1),
+            ],
+            "sales": [10.0, 15.0, 20.0],
+        }
+    )
+
+    result = time_series(
+        df,
+        datetime_column="timestamp",
+        frequency="1y",
+        metric="sales",
+        agg="sum",
+    )
+
+    assert [(row["timestamp"].year, row["sales"]) for row in result["result"]] == [
+        (2023, 25.0),
+        (2024, 20.0),
+    ]
