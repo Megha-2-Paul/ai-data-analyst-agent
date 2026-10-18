@@ -1,4 +1,5 @@
 import polars as pl
+import pytest
 
 from data_analyst.agent import AnalystAgent
 
@@ -117,4 +118,66 @@ def test_agent_executes_filtered_year_time_series_with_explicit_average():
         {"year": 2021, "gdp_growth": 4.0},
         {"year": 2022, "gdp_growth": 5.0},
     ]
+
+@pytest.mark.parametrize(
+    ("direction", "expected"),
+    [
+        ("asc", ["low", "high", "missing"]),
+        ("desc", ["high", "low", "missing"]),
+    ],
+)
+def test_ranking_keeps_null_aggregates_last_for_both_directions(direction, expected):
+    from data_analyst.agent import _execute_plan
+    from data_analyst.planner import QueryPlan
+
+    df = pl.DataFrame(
+        {
+            "group": ["high", "missing", "low"],
+            "value": [10.0, None, 2.0],
+        }
+    )
+    plan = QueryPlan(
+        operation="aggregate",
+        group_by=["group"],
+        metric="value",
+        aggregation="mean",
+        sort_direction=direction,
+        question="test ranking null ordering",
+    )
+
+    result = _execute_plan(df, plan)
+
+    assert [row["group"] for row in result["result"]] == expected
+
+
+@pytest.mark.parametrize(
+    ("direction", "expected"),
+    [
+        ("asc", ["low"]),
+        ("desc", ["high"]),
+    ],
+)
+def test_top_n_ranking_does_not_select_null_aggregate(direction, expected):
+    from data_analyst.agent import _execute_plan
+    from data_analyst.planner import QueryPlan
+
+    df = pl.DataFrame(
+        {
+            "group": ["high", "missing", "low"],
+            "value": [10.0, None, 2.0],
+        }
+    )
+    plan = QueryPlan(
+        operation="aggregate",
+        group_by=["group"],
+        metric="value",
+        aggregation="mean",
+        sort_direction=direction,
+        limit=1,
+        question="test top n null ordering",
+    )
+
+    result = _execute_plan(df, plan)
+
+    assert [row["group"] for row in result["result"]] == expected
 
