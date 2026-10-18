@@ -107,6 +107,15 @@ def _execute_plan(df: pl.DataFrame, plan: QueryPlan) -> Any:
                 if plan.limit:
                     result["parameters"]["limit"] = plan.limit
                     result["result"] = result["result"][: plan.limit]
+                if plan.percentage_of_total:
+                    denominator = sum(float(row["count"]) for row in result["result"])
+                    for row in result["result"]:
+                        row["percentage_of_total"] = (
+                            float(row["count"]) / denominator * 100.0 if denominator else None
+                        )
+                    result["parameters"]["percentage_of_total"] = True
+                    result["metadata"]["percentage_basis"] = "count"
+                    result["metadata"]["percentage_denominator"] = denominator
                 return result
             raise AgentExecutionError("Aggregate plan is missing metric.")
         result = aggregate(
