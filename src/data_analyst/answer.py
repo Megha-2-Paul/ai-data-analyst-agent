@@ -106,7 +106,7 @@ def _single_step_evidence(result: dict[str, Any], source: str = "step_1") -> tup
     findings: list[Finding] = []
     limitations: list[str] = []
 
-    if analysis in {"grouped_aggregation", "aggregation"}:
+    if analysis in {"grouped_aggregation", "grouped_count", "aggregation"}:
         rows = _rows(result)
         parameters = result.get("parameters", {})
         metric = parameters.get("metric")
