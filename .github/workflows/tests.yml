@@ -30,6 +30,12 @@ jobs:
 
       - name: Build Docker image
         run: docker build -t ai-data-analyst-agent:ci .
+      - name: Validate frontend JavaScript syntax
+        run: node --check frontend/app.js
+
+      - name: Build frontend Docker image
+        run: docker build -f frontend/Dockerfile -t ai-data-analyst-frontend:ci .
+
       - name: Validate Docker Compose configuration
         run: |
           cp .env.example .env
