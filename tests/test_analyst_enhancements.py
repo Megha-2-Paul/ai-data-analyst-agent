@@ -12,6 +12,9 @@ def test_global_aggregation_is_supported():
     assert response.plan.operation == "aggregate"
     assert response.plan.group_by == []
     assert response.result["result"] == [{"sales": 20.0}]
+    assert response.answer is not None
+    assert response.answer.evidence
+    assert "20.00" in response.answer.summary
 
 
 def test_explicit_filter_is_applied_before_global_aggregation():
