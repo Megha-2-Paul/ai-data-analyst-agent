@@ -133,7 +133,7 @@ data-analyst ask data/raw/yellow_tripdata_2025-01.parquet "What is the average f
 
 ## Planned work
 
-Broader real-world validation, additional visualizations, asynchronous workers, and a frontend remain future work. Groq and Gemini planning are optional; credentials remain outside source control, provider failures are controlled, and deterministic validation/calculation remain authoritative.
+Broader real-world validation, richer visualizations, asynchronous workers, and production hardening remain future work. A first responsive web dashboard is now included on `stage-4-data-preparation`. Groq and Gemini planning are optional; credentials remain outside source control, provider failures are controlled, and deterministic validation/calculation remain authoritative.
 
 ## Architecture
 
@@ -182,10 +182,23 @@ This repository is developed incrementally. Review the [Development Workflow](do
 - **Stage 2 — Multi-step analytical reasoning:** implemented
 - **Stage 3 — Evidence-backed answers:** implemented
 - **Stage 4 — Data preparation:** implemented on `stage-4-data-preparation`; not merged into `main`
-- **Enhanced analytics and optional ML:** implemented on `stage-4-data-preparation`; CI verification pending
+- **Enhanced analytics and optional ML:** implemented on `stage-4-data-preparation`; CI and optional live provider smoke verified
+- **Frontend dashboard MVP:** initial implementation on `stage-4-data-preparation`; awaiting complete validation
 - **Groq and Gemini providers:** optional adapters with offline tests and opt-in live smoke tests
 - **Backend API:** implemented on `stage-4-data-preparation`; requires database migration and secure environment configuration before use
 
+
+## Frontend dashboard
+
+A lightweight responsive browser dashboard lives in `frontend/` and is served by Nginx in Docker Compose. It includes account registration/sign-in, workspace overview, CSV/Parquet upload, dataset profile and quality inspection, natural-language analysis with deterministic/Groq/Gemini/OpenAI planner selection, optional preparation, analysis history, JSON report creation/download, and usage-event summaries. The browser token is held in `sessionStorage` and sent as a bearer token; the UI never asks for provider API keys. Nginx proxies `/api/` to FastAPI on the internal Compose network to avoid browser CORS configuration.
+
+Start the full stack after configuring `.env` from `.env.example` with a unique `APP_SECRET_KEY` and `POSTGRES_PASSWORD`:
+
+~~~bash
+docker compose up --build
+~~~
+
+Then open `http://localhost:8080`. The API docs remain available at `http://localhost:8000/docs`. The initial frontend is an MVP: no charting library, password reset, workspace switching, member management UI, or frontend automated browser tests yet. Do not expose it publicly before HTTPS, edge rate limiting, secure deployment configuration, backups, retention, and privacy requirements are addressed.
 
 ## Backend API
 
