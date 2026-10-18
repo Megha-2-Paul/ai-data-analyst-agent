@@ -8,7 +8,7 @@ import polars as pl
 
 from .agent import AnalystAgent
 from .analysis import aggregate, correlation, describe, time_series
-from .ingestion import load_dataset
+from .ingestion import load_dataset, scan_dataset
 from .llm_planner import OpenAIPlanner
 from .planner import plan_query
 from .preparation import prepare_dataset
@@ -78,6 +78,27 @@ def main() -> None:
     )
 
     args = parser.parse_args()
+
+    # Planning needs only the schema. Keep this path lazy so large datasets
+    # are not fully loaded merely to construct a QueryPlan.
+    if args.command == "plan":
+        schema = scan_dataset(args.path).collect_schema()
+        numeric_columns = [
+            name for name, dtype in schema.items() if dtype.is_numeric()
+        ]
+        datetime_columns = [
+            name for name, dtype in schema.items()
+            if dtype in (pl.Date, pl.Datetime)
+        ]
+        result = plan_query(
+            args.question,
+            columns=list(schema.keys()),
+            numeric_columns=numeric_columns,
+            datetime_columns=datetime_columns,
+        ).to_dict()
+        print(json.dumps(result, indent=2, default=str))
+        return
+
     df = load_dataset(args.path)
 
     preparation = None
@@ -121,21 +142,7 @@ def main() -> None:
         print(json.dumps(result, indent=2, default=str))
         return
 
-    if args.command == "plan":
-        numeric_columns = [
-            name for name, dtype in df.schema.items() if dtype.is_numeric()
-        ]
-        datetime_columns = [
-            name for name, dtype in df.schema.items()
-            if dtype in (pl.Date, pl.Datetime)
-        ]
-        result = plan_query(
-            args.question,
-            columns=df.columns,
-            numeric_columns=numeric_columns,
-            datetime_columns=datetime_columns,
-        ).to_dict()
-    elif args.command == "profile":
+    if args.command == "profile":
         result = profile_dataset(df)
     elif args.command == "quality":
         result = quality_report(df)
