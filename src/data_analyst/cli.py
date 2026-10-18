@@ -46,7 +46,7 @@ def main() -> None:
         "--planner",
         choices=["deterministic", "openai", "groq", "gemini"],
         default="deterministic",
-        help="Planner backend. OpenAI is opt-in and requires the optional llm dependency and API key.",
+        help="Planner backend. AI providers are opt-in and require their SDK and API key.",
     )
 
     sub = subparsers.add_parser("describe")

@@ -45,7 +45,7 @@ class GroqPlanner:
             from groq import Groq
         except ImportError as exc:
             raise LLMPlanningError("Groq SDK is missing; reinstall the project dependencies.") from exc
-        self._client = Groq(api_key=os.environ["GROQ_API_KEY"])
+        self._client = Groq(api_key=os.environ["GROQ_API_KEY"], timeout=30.0, max_retries=1)
         return self._client
 
     def __call__(
@@ -81,7 +81,7 @@ class GeminiPlanner:
 
     def __init__(self, client: Any | None = None, model: str | None = None) -> None:
         self._client = client
-        self._model = model or os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+        self._model = model or os.getenv("GEMINI_MODEL", "gemini-3.8-flash")
 
     def _get_client(self):
         if self._client is not None:
@@ -90,9 +90,10 @@ class GeminiPlanner:
             raise LLMPlanningError("GEMINI_API_KEY is not configured.")
         try:
             from google import genai
+            from google.genai import types
         except ImportError as exc:
             raise LLMPlanningError("Gemini SDK is missing; reinstall the project dependencies.") from exc
-        self._client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
+        self._client = genai.Client(api_key=os.environ["GEMINI_API_KEY"], http_options=types.HttpOptions(timeout=30_000))
         return self._client
 
     def __call__(

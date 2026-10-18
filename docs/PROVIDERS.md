@@ -7,7 +7,7 @@ Groq and Gemini are optional planners. The deterministic planner remains the def
 Copy `.env.example` to `.env` and set keys from the providers' official consoles. Never commit a real key or paste it into source files.
 
 - Groq: `GROQ_API_KEY`; model override `GROQ_MODEL` (default `openai/gpt-oss-120b`).
-- Gemini: `GEMINI_API_KEY`; model override `GEMINI_MODEL` (default `gemini-2.5-flash`).
+- Gemini: `GEMINI_API_KEY`; model override `GEMINI_MODEL` (default `gemini-3.8-flash`).
 
 API requests select a provider with `{"planner":"groq"}` or `{"planner":"gemini"}`. CLI supports `--planner groq` and `--planner gemini`.
 

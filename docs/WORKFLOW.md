@@ -86,7 +86,7 @@ This checkpoint reflects the repository audit recorded on 2026-10-18. Re-check l
 
 1. Audit current `main`, feature branches, open PRs, and CI before selecting the next implementation task.
 2. Decide which feature-branch work should be reviewed and integrated before beginning additional functionality.
-3. For a future LLM planner/provider integration, approve the provider choice, configuration contract, deterministic fallback, error handling, security controls, and acceptance tests before coding.
+3. For changes to the approved Groq, Gemini, or OpenAI planner adapters, preserve the shared QueryPlan validation contract, deterministic fallback, bounded requests, safe error handling, and offline plus opt-in live tests.
 4. For a possible n8n workflow, define the user-facing workflow and data flow first. Keep calculations and validation in the existing Python engine; expose or wrap interfaces only through a separately approved design.
 5. Do not assume that a planned feature is implemented, that a feature-branch merge updates `main`, or that an old CI result validates newer commits.
 
