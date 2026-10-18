@@ -2,6 +2,14 @@ name: Optional provider smoke tests
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - stage-4-data-preparation
+    paths:
+      - ".github/workflows/provider-smoke.yml"
+      - "src/data_analyst/providers.py"
+      - "tests/test_live_providers.py"
+      - "pyproject.toml"
 
 jobs:
   provider-smoke:
