@@ -151,9 +151,12 @@ def _single_step_evidence(result: dict[str, Any], source: str = "step_1") -> tup
                 metric=metric,
                 value=value,
                 context=context,
+                percentage_of_total=row.get("percentage_of_total"),
             )
             evidence_ids.append(eid)
-            value_parts.append(f"{context}: {_fmt(value)}")
+            share = row.get("percentage_of_total")
+            share_text = f" ({share:.2f}% of total)" if isinstance(share, (int, float)) else ""
+            value_parts.append(f"{context}: {_fmt(value)}{share_text}")
         
         if claim_type == "highest_group":
             context = ", ".join(f"{column}={selected[0][1].get(column)}" for column in group_columns)
@@ -199,6 +202,48 @@ def _single_step_evidence(result: dict[str, Any], source: str = "step_1") -> tup
         else:
             limitations.append("No usable correlation values were returned.")
         return evidence, findings, "Correlation analysis was calculated from the selected numeric columns.", limitations
+
+    if analysis == "anomaly_detection":
+        rows = _rows(result)
+        metadata = result.get("metadata", {})
+        method = result.get("method", "anomaly detector")
+        count = int(metadata.get("anomaly_count", len(rows)) or 0)
+        scored = int(metadata.get("rows_scored", 0) or 0)
+        for idx, row in enumerate(rows[:5], start=1):
+            row_index = row.get("row_index")
+            score = row.get("anomaly_score")
+            eid = _add(
+                evidence, source, "anomaly_candidate",
+                f"Potential anomaly at row {row_index}",
+                row_index=row_index, anomaly_score=score, values=row.get("values", {}),
+            )
+            findings.append(Finding(
+                f"f{idx}",
+                f"Row {row_index} was flagged as unusual (anomaly score {_fmt(score)}).",
+                [eid],
+            ))
+        summary = f"{method} flagged {count} of {scored} scored rows as potentially unusual."
+        limitations.extend(metadata.get("limitations", []))
+        if count > len(rows[:5]):
+            limitations.append("Only the five highest-scoring flagged rows are included in the narrative; the structured result contains all flagged rows.")
+        return evidence, findings, summary, limitations
+
+    if analysis == "predictive_model_evaluation":
+        metadata = result.get("metadata", {})
+        payload = result.get("result", {})
+        metrics = payload.get("metrics", {}) if isinstance(payload, dict) else {}
+        method = result.get("method", "predictive model")
+        test_rows = payload.get("test_rows", 0) if isinstance(payload, dict) else 0
+        for idx, (name, value) in enumerate(metrics.items(), start=1):
+            if not isinstance(value, (int, float)):
+                continue
+            eid = _add(evidence, source, "model_metric", f"{name} for {method}", metric=name, value=value, method=method, test_rows=test_rows)
+            findings.append(Finding(f"f{idx}", f"{name} = {_fmt(value)} on {test_rows} held-out test rows.", [eid]))
+        summary = f"{method} was evaluated on {test_rows} held-out rows."
+        limitations.extend(metadata.get("limitations", []))
+        if not findings:
+            limitations.append("No model evaluation metrics were available.")
+        return evidence, findings, summary, limitations
 
     if analysis == "time_series":
         rows = _rows(result)
