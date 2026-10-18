@@ -20,6 +20,7 @@ from .profiling import profile_dataset
 from .quality import quality_report
 from .reasoning import AnalysisPlan, execute_analysis_plan, plan_analysis
 from .serialization import json_safe
+from .ml import detect_anomalies
 
 
 class AgentExecutionError(RuntimeError):
@@ -61,6 +62,11 @@ def _execute_plan(df: pl.DataFrame, plan: QueryPlan) -> Any:
         matches = df.get_column(plan.filter_column).cast(pl.String).str.to_lowercase() == str(value).lower()
         df = df.filter(matches)
 
+    if plan.operation == "anomaly_detection":
+        try:
+            return detect_anomalies(df, plan.columns or None)
+        except RuntimeError as exc:
+            raise AgentExecutionError(str(exc)) from exc
     if plan.operation == "profile":
         return profile_dataset(df)
     if plan.operation == "quality":
