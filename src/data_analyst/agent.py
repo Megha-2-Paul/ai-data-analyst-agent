@@ -19,6 +19,7 @@ from .planner import QueryPlan, plan_query
 from .profiling import profile_dataset
 from .quality import quality_report
 from .reasoning import AnalysisPlan, execute_analysis_plan, plan_analysis
+from .serialization import json_safe
 
 
 class AgentExecutionError(RuntimeError):
@@ -47,7 +48,7 @@ class AgentResponse:
             payload["analysis_plan"] = self.analysis_plan.to_dict()
         if self.answer is not None:
             payload["answer"] = self.answer.to_dict()
-        return payload
+        return json_safe(payload)
 
 
 def _execute_plan(df: pl.DataFrame, plan: QueryPlan) -> Any:
