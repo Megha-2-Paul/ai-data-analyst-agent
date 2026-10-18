@@ -68,8 +68,7 @@ def detect_anomalies(
         raise MLAnalysisError(f"Anomaly detection requires numeric columns: {', '.join(non_numeric)}.")
     if df.height < 10:
         raise MLAnalysisError("Anomaly detection requires at least 10 rows.")
-    frame = df.select(selected).with_row_index("_row_index")
-    numeric = frame.select(selected).cast({name: pl.Float64 for name in selected}, strict=False)
+    numeric = df.select(selected).cast({name: pl.Float64 for name in selected}, strict=False)
     matrix = numeric.to_numpy()
     valid_mask = np.isfinite(matrix).all(axis=1)
     valid_positions = np.flatnonzero(valid_mask)
