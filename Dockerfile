@@ -8,7 +8,7 @@ COPY pyproject.toml README.md ./
 COPY src ./src
 COPY alembic.ini ./
 COPY migrations ./migrations
-RUN pip install --upgrade pip && pip install .
+RUN pip install --upgrade pip && pip install '.[ml]'
 RUN useradd --create-home --uid 10001 appuser
 RUN mkdir -p /app/data/uploads && chown -R appuser:appuser /app
 USER appuser
