@@ -143,3 +143,20 @@ class MLModelRequest(BaseModel):
         if value not in {"regression", "classification"}:
             raise ValueError("task must be regression or classification.")
         return value
+
+
+
+class ForecastRequest(BaseModel):
+    datetime_column: str = Field(min_length=1, max_length=200)
+    target: str = Field(min_length=1, max_length=200)
+    horizon: int = Field(default=1, ge=1, le=24)
+    test_size: float = Field(default=0.2, ge=0.1, le=0.4)
+    n_lags: int = Field(default=3, ge=1, le=12)
+
+    @field_validator("datetime_column", "target")
+    @classmethod
+    def normalize_column_names(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("Column names cannot be blank.")
+        return value
