@@ -232,6 +232,8 @@ def forecast_time_series(
     if datetime_column not in df.columns or target not in df.columns:
         missing = [name for name in (datetime_column, target) if name not in df.columns]
         raise MLAnalysisError(f"Unknown column(s): {', '.join(missing)}.")
+    if datetime_column == target:
+        raise MLAnalysisError("The time column cannot also be the forecast target.")
     dtype = df.schema[datetime_column]
     if dtype not in (pl.Date, pl.Datetime, pl.Int8, pl.Int16, pl.Int32, pl.Int64, pl.UInt8, pl.UInt16, pl.UInt32, pl.UInt64):
         raise MLAnalysisError("Forecasting requires a Date/Datetime column or an integer year column.")
