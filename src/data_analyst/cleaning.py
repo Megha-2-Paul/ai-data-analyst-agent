@@ -170,11 +170,16 @@ def build_cleaning_plan(df: pl.DataFrame) -> CleaningPlan:
         )
         next_id += 1
 
-    empty_columns = [
-        rename_map.get(name, name)
-        for name in df.columns
-        if df.get_column(name).null_count() == df.height
-    ]
+    empty_columns = []
+    for name, dtype in df.schema.items():
+        series = df.get_column(name)
+        if series.null_count() == df.height:
+            empty_columns.append(rename_map.get(name, name))
+        elif dtype == pl.String:
+            # A column made entirely of blanks is empty after trim/blank-to-null.
+            observed = series.drop_nulls().cast(pl.String).str.strip_chars()
+            if len(observed) == 0 or observed.eq("").all():
+                empty_columns.append(rename_map.get(name, name))
     if empty_columns:
         steps.append(
             CleaningStep(
