@@ -4,7 +4,7 @@ import pytest
 
 from data_analyst.agent import AnalystAgent
 from data_analyst.answer import generate_answer
-from data_analyst.ml import MLAnalysisError, detect_anomalies, train_predictive_model
+from data_analyst.ml import MLAnalysisError, detect_anomalies, forecast_time_series, train_predictive_model
 
 
 def test_anomaly_detection_returns_traceable_flags_without_mutating_input():
@@ -95,3 +95,35 @@ def test_predictive_model_requires_sufficient_data():
     frame = pl.DataFrame({"feature": [1.0, 2.0, 3.0], "target": [2.0, 4.0, 6.0]})
     with pytest.raises(MLAnalysisError, match="at least 20 rows"):
         train_predictive_model(frame, target="target", features=["feature"])
+
+
+
+def test_forecast_uses_chronological_holdout_and_returns_future_steps():
+    from datetime import datetime, timedelta
+
+    frame = pl.DataFrame({
+        "timestamp": [datetime(2024, 1, 1) + timedelta(days=i) for i in range(50)],
+        "sales": [float(100 + i * 2 + (i % 4)) for i in range(50)],
+    })
+    result = forecast_time_series(
+        frame, datetime_column="timestamp", target="sales",
+        horizon=3, n_lags=3, test_size=0.2, random_state=5,
+    )
+
+    assert result["analysis"] == "time_series_forecast"
+    assert result["metadata"]["evaluation"].startswith("chronological holdout")
+    assert result["result"]["test_rows"] == 10
+    assert [item["step_ahead"] for item in result["result"]["future_forecast"]] == [1, 2, 3]
+    assert "naive_rmse" in result["result"]["metrics"]
+    answer = generate_answer(result)
+    assert answer.evidence
+    assert "3 forecast step(s)" in answer.summary
+
+
+def test_forecast_rejects_string_datetime_column():
+    frame = pl.DataFrame({
+        "date": ["2025-01-01"] * 25,
+        "sales": [float(i) for i in range(25)],
+    })
+    with pytest.raises(MLAnalysisError, match="Date/Datetime"):
+        forecast_time_series(frame, datetime_column="date", target="sales")
