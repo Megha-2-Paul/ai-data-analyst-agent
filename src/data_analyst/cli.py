@@ -10,6 +10,7 @@ from .agent import AnalystAgent
 from .analysis import aggregate, correlation, describe, time_series
 from .ingestion import load_dataset, scan_dataset
 from .llm_planner import OpenAIPlanner
+from .providers import GeminiPlanner, GroqPlanner
 from .planner import plan_query
 from .preparation import prepare_dataset
 from .profiling import profile_dataset
@@ -43,7 +44,7 @@ def main() -> None:
     )
     ask.add_argument(
         "--planner",
-        choices=["deterministic", "openai"],
+        choices=["deterministic", "openai", "groq", "gemini"],
         default="deterministic",
         help="Planner backend. OpenAI is opt-in and requires the optional llm dependency and API key.",
     )
@@ -107,7 +108,9 @@ def main() -> None:
         df = preparation.dataframe
 
     if args.command == "ask":
-        planner = OpenAIPlanner() if args.planner == "openai" else plan_query
+        planner = {"deterministic": plan_query, "openai": OpenAIPlanner, "groq": GroqPlanner, "gemini": GeminiPlanner}[args.planner]
+        if args.planner != "deterministic":
+            planner = planner()
         response = AnalystAgent(planner=planner).ask(args.question, df)
         result = response.to_dict()
         if preparation is not None:

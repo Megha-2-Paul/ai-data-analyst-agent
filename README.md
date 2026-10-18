@@ -1,6 +1,6 @@
 # AI Data Analyst Agent
 
-An extensible data analysis platform that combines a deterministic analytical engine with optional AI-assisted planning, multi-step orchestration, evidence-backed answers, and safe data preparation.
+An extensible data analysis platform with a deterministic analytical engine, optional Groq/Gemini/OpenAI planning, evidence-backed answers, safe data preparation, and an authenticated FastAPI backend.
 
 ## Project vision
 
@@ -25,6 +25,9 @@ External datasets are not committed to this repository. See [data source guidanc
 - Structured execution traces and evidence-backed answers
 - Optional safe data preparation with a transformation trace
 - Command-line interface and automated tests
+- FastAPI endpoints for authentication, dataset upload, analysis, reports, and usage
+- PostgreSQL persistence with Alembic migrations and per-user resource isolation
+- Optional Groq and Gemini planner adapters, plus opt-in live provider smoke tests
 
 The Python analytical engine remains authoritative for schema validation, calculations, and numerical results. AI-assisted planning proposes a structured plan; it does not execute arbitrary Python or SQL.
 
@@ -102,7 +105,7 @@ data-analyst ask data/raw/yellow_tripdata_2025-01.parquet "What is the average f
 
 ## Planned work
 
-Groq integration, additional visualizations, and broader real-world validation are separate future work unless explicitly implemented and tested. Any future AI provider integration must remain optional, keep secrets outside source control, handle unavailable services and rate limits, and preserve deterministic validation and calculation.
+Broader real-world validation, additional visualizations, asynchronous workers, and a frontend remain future work. Groq and Gemini planning are optional; credentials remain outside source control, provider failures are controlled, and deterministic validation/calculation remain authoritative.
 
 ## Architecture
 
@@ -151,4 +154,14 @@ This repository is developed incrementally. Review the [Development Workflow](do
 - **Stage 2 — Multi-step analytical reasoning:** implemented
 - **Stage 3 — Evidence-backed answers:** implemented
 - **Stage 4 — Data preparation:** implemented on `stage-4-data-preparation`; reconciled with `main`, under final validation and review
-- **Groq integration:** planned separately; not implemented
+- **Groq and Gemini providers:** optional adapters with offline tests and opt-in live smoke tests
+- **Backend API:** implemented on `stage-4-data-preparation`; requires database migration and environment configuration before use
+
+
+## Backend API
+
+The authenticated FastAPI backend exposes dataset upload, profile/quality/preparation, analysis, report download, and usage endpoints. See [Backend API documentation](docs/API.md) for setup and route details.
+
+## Groq and Gemini
+
+The deterministic planner is the default. Optional Groq and Gemini planners can be selected with `--planner groq` or `--planner gemini`; configure API keys only through environment variables. See [provider and live-test instructions](docs/PROVIDERS.md). Standard CI uses fake responses and does not consume API quota; live smoke tests run only when provider keys are configured.
