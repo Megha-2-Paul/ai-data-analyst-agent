@@ -27,13 +27,13 @@ class PlanningError(ValueError):
 
 @dataclass(frozen=True)
 class QueryPlan:
-    """Validated, execution-ready description of one analytical request."""
+    """Structured description of one analytical request; it is not executed."""
 
     operation: Operation
     columns: list[str] = field(default_factory=list)
     group_by: list[str] = field(default_factory=list)
     metric: str | None = None
-    aggregation: str | None = None
+    agg: str | None = None
     datetime_column: str | None = None
     frequency: str | None = None
     sort_direction: str | None = None
@@ -44,7 +44,14 @@ class QueryPlan:
     filter_value: Any | None = None
 
     def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
+        result = asdict(self)
+        result["aggregation"] = self.agg
+        return result
+
+    @property
+    def aggregation(self) -> str | None:
+        """Compatibility alias for the analysis API's ``agg`` parameter."""
+        return self.agg
 
 
 _AGGREGATIONS = {
@@ -68,60 +75,103 @@ def _normalize(value: str) -> str:
     return re.sub(r"[^a-z0-9]+", " ", value.lower()).strip()
 
 
-def _find_columns(question: str, columns: Sequence[str]) -> list[str]:
-    normalized_question = f" {_normalize(question)} "
-    matches = []
+def _column_matches(question: str, columns: Sequence[str]) -> list[tuple[int, int, str]]:
+    normalized_question = _normalize(question)
+    matches: list[tuple[int, int, str]] = []
     for column in columns:
         candidate = _normalize(column)
-        if candidate and f" {candidate} " in normalized_question:
-            matches.append(column)
-    # Preserve the order in which columns are named in the question.
-    # This keeps structured plans deterministic and avoids changing the user's
-    # requested correlation column order.
-    positions = {
-        column: normalized_question.find(f" {_normalize(column)} ")
-        for column in matches
-    }
-    # Prefer the more specific column when names overlap, such as
-    # gdp and gdp_growth. Both occur at the same position in
-    # "average GDP growth", but gdp_growth is the intended metric.
-    return sorted(
-        matches,
-        key=lambda c: (positions[c], -len(_normalize(c))),
-    )
+        if not candidate:
+            continue
+        pattern = rf"(?<![a-z0-9]){re.escape(candidate)}(?![a-z0-9])"
+        matches.extend(
+            (match.start(), match.end(), column)
+            for match in re.finditer(pattern, normalized_question)
+        )
+
+    columns_by_span: dict[tuple[int, int], list[str]] = {}
+    for start, end, column in matches:
+        span_columns = columns_by_span.setdefault((start, end), [])
+        if column not in span_columns:
+            span_columns.append(column)
+    for (start, end), span_columns in columns_by_span.items():
+        if len(span_columns) > 1:
+            match = normalized_question[start:end]
+            raise PlanningError(
+                f"Ambiguous column reference '{match}' matches multiple schema columns: "
+                f"{', '.join(span_columns)}."
+            )
+
+    selected: list[tuple[int, int, str]] = []
+    for start, end, column in sorted(matches, key=lambda item: (item[0], -(item[1] - item[0]))):
+        if any(start < selected_end and end > selected_start for selected_start, selected_end, _ in selected):
+            continue
+        selected.append((start, end, column))
+    return selected
+
+
+def _find_columns(question: str, columns: Sequence[str]) -> list[str]:
+    return list(dict.fromkeys(column for _, _, column in _column_matches(question, columns)))
 
 
 def _numeric_columns(question: str, columns: Sequence[str], numeric_columns: Sequence[str] | None) -> list[str]:
-    candidates = list(columns if numeric_columns is None else numeric_columns)
-    return [c for c in _find_columns(question, candidates)]
+    candidates = columns if numeric_columns is None else numeric_columns
+    return _find_columns(question, candidates)
 
 
 def _datetime_columns(question: str, columns: Sequence[str], datetime_columns: Sequence[str] | None) -> list[str]:
-    candidates = list(columns if datetime_columns is None else datetime_columns)
-    return [c for c in _find_columns(question, candidates)]
+    candidates = columns if datetime_columns is None else datetime_columns
+    return _find_columns(question, candidates)
 
 
 def _detect_aggregation(question: str) -> str | None:
     text = _normalize(question)
-    for phrase, aggregation in sorted(_AGGREGATIONS.items(), key=lambda item: len(item[0]), reverse=True):
-        if f" {phrase} " in f" {text} ":
-            return aggregation
-    return None
+    matches = {
+        aggregation
+        for phrase, aggregation in _AGGREGATIONS.items()
+        if f" {phrase} " in f" {text} "
+    }
+    if len(matches) > 1:
+        raise PlanningError("Conflicting aggregation operations were requested.")
+    return next(iter(matches), None)
 
 
-def _detect_frequency(question: str) -> str | None:
+def _detect_frequency(question: str, columns: Sequence[str]) -> str | None:
     text = _normalize(question)
-    if any(word in text.split() for word in ("hour", "hourly")):
-        return "1h"
-    if any(word in text.split() for word in ("week", "weekly")):
-        return "1w"
-    if any(word in text.split() for word in ("month", "monthly")):
-        return "1mo"
-    if any(word in text.split() for word in ("day", "daily")):
-        return "1d"
-    if any(word in text.split() for word in ("year", "years", "yearly", "annual", "annually")):
-        return "1y"
-    return None
+    column_spans = [(start, end) for start, end, _ in _column_matches(question, columns)]
+    units = {
+        "year": "1y",
+        "years": "1y",
+        "yearly": "1y",
+        "annual": "1y",
+        "annually": "1y",
+        "hour": "1h",
+        "hourly": "1h",
+        "week": "1w",
+        "weekly": "1w",
+        "month": "1mo",
+        "monthly": "1mo",
+        "day": "1d",
+        "daily": "1d",
+    }
+    matches = set()
+    for word, frequency in units.items():
+        for match in re.finditer(rf"\b{re.escape(word)}\b", text):
+            if not any(start < match.end() and end > match.start() for start, end in column_spans):
+                matches.add(frequency)
+
+    unsupported = []
+    for word in ("quarter", "quarterly"):
+        for match in re.finditer(rf"\b{word}\b", text):
+            if not any(start < match.end() and end > match.start() for start, end in column_spans):
+                unsupported.append(word)
+    if unsupported:
+        requested = unsupported[0]
+        raise PlanningError(
+            f"Unsupported time frequency '{requested}'. Supported frequencies are hourly, daily, weekly, monthly, and yearly."
+        )
+    if len(matches) > 1:
+        raise PlanningError("Conflicting time frequencies were requested.")
+    return next(iter(matches), None)
 
 
 def _detect_limit(question: str) -> int | None:
@@ -131,11 +181,33 @@ def _detect_limit(question: str) -> int | None:
 
 def _detect_sort(question: str) -> str | None:
     text = _normalize(question)
-    if any(term in text for term in ("highest", "largest", "maximum", "top")):
-        return "desc"
-    if any(term in text for term in ("lowest", "smallest", "minimum", "bottom")):
-        return "asc"
-    return None
+    directions = set()
+    if any(term in text.split() for term in ("highest", "largest", "maximum", "top")):
+        directions.add("desc")
+    if any(term in text.split() for term in ("lowest", "smallest", "minimum", "bottom")):
+        directions.add("asc")
+    if len(directions) > 1:
+        raise PlanningError("Conflicting sort directions were requested.")
+    return next(iter(directions), None)
+
+
+def _one_column(columns: Sequence[str], purpose: str) -> str | None:
+    if len(columns) > 1:
+        raise PlanningError(f"Name exactly one {purpose}; found: {', '.join(columns)}.")
+    return columns[0] if columns else None
+
+
+def _group_columns(question: str, columns: Sequence[str]) -> list[str]:
+    text = _normalize(question)
+    top_groups = re.search(r"\b(?:top|bottom)\s+\d+\s+(.+?)\s+groups?\s+by\b", text)
+    if top_groups:
+        group_clause = top_groups.group(1)
+    else:
+        marker = re.search(r"\b(?:group\s+by|grouped\s+by|by|per|each)\b", text)
+        if marker is None:
+            return []
+        group_clause = text[marker.end():]
+    return _find_columns(group_clause, columns)
 
 
 def plan_query(
@@ -160,7 +232,7 @@ def plan_query(
     if any(term in text for term in ("data quality", "quality check", "quality report", "missing values", "duplicates")):
         return QueryPlan(operation="quality", question=question)
 
-    if any(term in text for term in ("profile dataset", "profile the dataset", "dataset profile", "profile the data")):
+    if text == "profile" or any(term in text for term in ("profile dataset", "profile the dataset", "dataset profile", "profile the data")):
         return QueryPlan(operation="profile", question=question)
 
     mentioned_numeric = _numeric_columns(question, columns, numeric_columns)
@@ -176,33 +248,64 @@ def plan_query(
             question=question,
         )
 
-    if any(term in text for term in ("trend", "over time", "time series", "by day", "daily", "by week", "weekly", "by month", "monthly", "over the years", "over years", "yearly", "annual")):
-        temporal_column = mentioned_datetime[0] if mentioned_datetime else None
-        if temporal_column is None:
-            year_columns = [c for c in columns if _normalize(c) == "year"]
-            if len(year_columns) == 1 and any(term in text for term in ("year", "years", "yearly", "annual", "over time")):
-                temporal_column = year_columns[0]
-        if temporal_column is None:
-            raise PlanningError("Time-series analysis requires an explicitly named date/datetime column or year column.")
+    frequency = _detect_frequency(question, columns)
+    time_series_intent = frequency is not None or any(
+        term in text
+        for term in ("trend", "over time", "time series", "over the years", "over years")
+    )
+    if time_series_intent:
+        datetime_column = _one_column(mentioned_datetime, "date/datetime column")
+        if datetime_column is None:
+            year_columns = [column for column in columns if _normalize(column) == "year"]
+            if len(year_columns) > 1:
+                raise PlanningError("Ambiguous year column; provide an explicit date/datetime column.")
+            if len(year_columns) == 1 and any(
+                term in text for term in ("year", "years", "yearly", "annual", "annually", "over time")
+            ):
+                datetime_column = year_columns[0]
+        if datetime_column is None:
+            raise PlanningError(
+                "Time-series analysis requires an explicitly named date/datetime column or year column."
+            )
 
-        metric_candidates = [column for column in mentioned_numeric if column != temporal_column]
-        metric = metric_candidates[0] if metric_candidates else None
+        metric_candidates = [
+            column for column in mentioned_numeric if column != datetime_column
+        ]
+        metric = _one_column(metric_candidates, "numeric metric")
         aggregation = _detect_aggregation(question)
-        if aggregation is None and metric is not None:
-            aggregation = "mean"
+        assumptions = []
+        if aggregation is None:
+            aggregation = "mean" if metric is not None else "count"
+            default_label = "mean" if metric is not None else "count"
+            assumptions.append(f"No aggregation was specified; defaulted to {default_label}.")
+
+        if frequency is None:
+            frequency = "1y" if _normalize(datetime_column) == "year" else "1d"
+            label = "yearly (1y)" if frequency == "1y" else "daily (1d)"
+            assumptions.append(f"No time frequency was specified; defaulted to {label}.")
 
         filter_column = None
         filter_value = None
-        non_numeric = [
-            c for c in columns
-            if c not in set(numeric_columns or [])
-            and c not in set(datetime_columns or [])
+        numeric_set = set(numeric_columns or [])
+        datetime_set = set(datetime_columns or [])
+        non_temporal_categorical = [
+            column for column in columns
+            if column not in numeric_set
+            and column not in datetime_set
+            and column != datetime_column
         ]
-        country_columns = [c for c in non_numeric if _normalize(c) in ("country", "country name")]
+        country_columns = [
+            column for column in non_temporal_categorical
+            if _normalize(column) in ("country", "country name")
+        ]
         if country_columns:
-            match = re.search(r"\b([A-Za-z][A-Za-z ._-]{0,60})'s\s+", question)
-            if match:
-                candidate = match.group(1).strip()
+            country_match = re.search(
+                r"\b([A-Za-z][A-Za-z ._-]{0,60}?)'s\s+",
+                question,
+                flags=re.IGNORECASE,
+            )
+            if country_match:
+                candidate = country_match.group(1).strip()
                 candidate = re.sub(
                     r"^(?:(?:how|what|when|where|why|did|does|has|have|is|was|were|show|give|tell|calculate|compute|find|display)\s+)+",
                     "",
@@ -221,61 +324,58 @@ def plan_query(
 
         return QueryPlan(
             operation="time_series",
-            datetime_column=temporal_column,
+            datetime_column=datetime_column,
             metric=metric,
-            aggregation=aggregation,
-            frequency=_detect_frequency(question) or "1d",
+            agg=aggregation,
+            frequency=frequency,
             question=question,
+            assumptions=assumptions,
             filter_column=filter_column,
             filter_value=filter_value,
         )
 
     aggregation = _detect_aggregation(question)
-    grouped_intent = any(term in text for term in (" by ", " per ", " each ", " grouped", "group by"))
-    ranking_intent = any(term in text for term in ("highest", "largest", "maximum", "lowest", "smallest", "minimum", "top", "bottom"))
+    grouped_intent = any(
+        term in text for term in (" by ", " per ", " each ", " grouped", "group by")
+    )
+    ranking_intent = any(
+        term in text
+        for term in ("highest", "largest", "maximum", "lowest", "smallest", "minimum", "top", "bottom")
+    )
     if aggregation and (grouped_intent or ranking_intent):
-        # A grouping column may be numeric in the source data (for example,
-        # NYC TLC encodes payment_type as an integer). Exclude the selected
-        # metric and datetime columns rather than assuming every numeric
-        # column is a metric.
-        ranking_intent = any(term in text for term in ("highest", "largest", "maximum", "lowest", "smallest", "minimum", "top", "bottom"))
-        # _find_columns already prefers the most specific overlapping name
-        # (for example, gdp_growth over gdp). Use that first match as the
-        # metric for ranking questions instead of the last match, which can
-        # incorrectly select a shorter overlapping name such as gdp.
+        # Exclude the chosen metric and temporal columns, but allow numeric
+        # grouping dimensions such as payment_type.
         selected_metric = mentioned_numeric[0] if mentioned_numeric else None
         group_candidates = [
-            c for c in columns
-            if c != selected_metric and c not in mentioned_datetime
+            column for column in columns
+            if column != selected_metric and column not in mentioned_datetime
         ]
 
-        # Prefer columns explicitly named as the grouping dimension after
-        # "by", "per", or "each". This prevents metric-name fragments such
-        # as "GDP" from being mistaken for the grouping column in questions
-        # like "average GDP growth by country".
-        group_matches = []
-        grouping_pattern = re.compile(
-            r"\b(?:by|per|each)\s+(.+?)(?=\s+(?:and|with|over|for)\b|[?,.]|$)",
-            re.IGNORECASE,
-        )
-        for match in grouping_pattern.finditer(question):
-            group_text = match.group(1)
-            candidates = _find_columns(group_text, group_candidates)
-            if candidates:
-                group_matches.extend(candidates)
-
+        group_matches = _group_columns(question, group_candidates) if grouped_intent else []
+        if not group_matches:
+            grouping_pattern = re.compile(
+                r"\b(?:by|per|each)\s+(.+?)(?=\s+(?:and|with|over|for)\b|[?,.]|$)",
+                re.IGNORECASE,
+            )
+            for match in grouping_pattern.finditer(question):
+                group_matches.extend(_find_columns(match.group(1), group_candidates))
         if not group_matches:
             group_matches = _find_columns(question, group_candidates)
 
+        group_matches = list(dict.fromkeys(group_matches))
         if not group_matches:
             raise PlanningError("Grouped analysis requires an explicitly named grouping column.")
-        if aggregation != "count" and not selected_metric:
+        if selected_metric in group_matches:
+            remaining_metrics = [column for column in mentioned_numeric if column not in group_matches]
+            selected_metric = _one_column(remaining_metrics, "numeric metric")
+        if aggregation != "count" and selected_metric is None:
             raise PlanningError("Grouped metric analysis requires an explicitly named numeric metric.")
+
         return QueryPlan(
             operation="aggregate",
             group_by=[group_matches[0]],
             metric=selected_metric,
-            aggregation=aggregation,
+            agg=aggregation,
             sort_direction=_detect_sort(question),
             limit=_detect_limit(question),
             question=question,
