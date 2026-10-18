@@ -99,9 +99,10 @@ Train and evaluate a baseline supervised model using an explicit target and feat
 ~~~bash
 data-analyst ml-predict data.csv --target sales --features price units region --task regression
 data-analyst ml-predict data.csv --target churned --features tenure monthly_spend plan --task classification
+data-analyst ml-forecast data.csv --datetime-column order_date --target sales --horizon 3
 ~~~
 
-The predictive command uses a held-out train/test split and reports regression or classification metrics. The result includes row counts and limitations; it is a baseline, not a guarantee of future performance. Check for target leakage, representative data, appropriate features, and a suitable evaluation strategy before using a model for decisions. Anomaly detection identifies unusual patterns, not necessarily errors or fraud. The optional ML dependency is installed in CI so the ML path is exercised by the test suite.
+The predictive command uses a held-out train/test split and reports regression or classification metrics. The forecasting command uses a chronological holdout and compares its errors with a naive last-value baseline; forecast steps are relative to the last observation and do not infer calendar frequency. The result includes evaluation details and limitations; it is a baseline, not a guarantee of future performance. Check for target leakage, representative data, appropriate features, and a suitable evaluation strategy before using a model for decisions. Anomaly detection identifies unusual patterns, not necessarily errors or fraud. The optional ML dependency is installed in CI so the ML path is exercised by the test suite.
 
 ## Stage 4 — Data Preparation
 
