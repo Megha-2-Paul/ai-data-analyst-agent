@@ -292,7 +292,7 @@ def test_forecast_api_returns_evaluation_and_future_predictions(tmp_path):
         )
         uploaded = client.post(
             "/api/v1/datasets", headers=headers,
-            files={"file": ("timeseries.csv", ("\\n".join(rows) + "\\n").encode(), "text/csv")},
+            files={"file": ("timeseries.csv", ("\n".join(rows) + "\n").encode(), "text/csv")},
         )
         assert uploaded.status_code == 201, uploaded.text
         dataset_id = uploaded.json()["id"]
