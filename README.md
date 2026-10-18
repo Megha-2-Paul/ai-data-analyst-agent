@@ -1,58 +1,42 @@
 # AI Data Analyst Agent
 
-An extensible AI-powered data analysis platform designed to analyze real-world structured datasets using a reliable analytical engine, with an agent layer added incrementally.
+An extensible data analysis platform that combines a deterministic analytical engine with optional AI-assisted planning, multi-step orchestration, evidence-backed answers, and safe data preparation.
 
 ## Project vision
 
-The goal is to build an analyst that can work across different real-world datasets without hard-coded, dataset-specific analysis logic.
+Build an analyst that can work across real-world structured datasets without hard-coded, dataset-specific analysis logic.
 
-Initial real-world validation sources:
+Initial validation sources:
 
-- NYC TLC Yellow Taxi Trip Records — primary Stage 1 dataset
-- UDISE+ education data — later validation dataset
-- World Bank World Development Indicators — later API integration
+- **NYC TLC Yellow Taxi Trip Records** — primary Stage 1 dataset
+- **UDISE+ education data** — later validation dataset
+- **World Bank World Development Indicators** — later validation dataset and API integration
 
-## Stage 1 — Foundation
+External datasets are not committed to this repository. See [data source guidance](docs/data_sources.md).
 
-Stage 1 builds a trustworthy analytical core and the first agent orchestration layer:
+## Implemented capabilities
 
-- CSV and Parquet ingestion
-- Dataset profiling
-- Data-quality checks
-- Descriptive statistics
-- Grouped/time-based analysis
-- DuckDB analytical queries
-- Structured, traceable analysis results
-- Natural-language query planning
-- Optional LLM-backed query planning
-- Agent orchestration and execution traces
+- CSV and Parquet ingestion and schema scanning
+- Dataset profiling and data-quality checks
+- Descriptive statistics, grouped aggregation, correlation, and time-series analysis
+- Deterministic natural-language query planning and validation
+- Optional OpenAI-backed planning at the planner boundary
 - Multi-step analytical reasoning with dependency-aware execution
-- Automated tests
-- Command-line interface
+- Structured execution traces and evidence-backed answers
+- Optional safe data preparation with a transformation trace
+- Command-line interface and automated tests
 
-### Stage 1.5 — Optional LLM Planner
+The Python analytical engine remains authoritative for schema validation, calculations, and numerical results. AI-assisted planning proposes a structured plan; it does not execute arbitrary Python or SQL.
 
-The deterministic planner remains the default. Stage 1.5 adds an optional OpenAI planner at the planning boundary:
+## Stage 1.3 — Deterministic Query Planning
 
-~~~text
-User question
-    ↓
-Planner (deterministic OR optional OpenAI)
-    ↓
-Validated QueryPlan
-    ↓
-Agent executor
-    ↓
-Analytical engine
-    ↓
-Structured result + execution trace
-~~~
+The deterministic planner converts supported natural-language requests into validated `QueryPlan` objects using the supplied dataset schema. It handles supported aggregation, grouping, ranking, filters, and time frequencies, and rejects ambiguous or unsupported requests. When a supported default is used, it should be explicit in the plan.
 
-The LLM only proposes a structured QueryPlan. It does not execute Python, SQL, or arbitrary tools. Every referenced column, operation, aggregation, datetime field, frequency, sort direction, and limit is validated before the analytical engine runs.
+The planner plans; it does not execute analysis. The `data-analyst plan` command returns a JSON plan, while the analytical engine validates and computes results.
 
-### Zero-cost-by-default
+## Stage 1.5 — Optional LLM Planner
 
-The base installation does not require the OpenAI SDK or an API key. CI tests the LLM boundary with a fake client, so tests make no network requests and do not consume API credits.
+The deterministic planner remains the default. An optional OpenAI planner can propose a structured `QueryPlan`; the application validates the plan before execution.
 
 Install the optional dependency only when live LLM planning is wanted:
 
@@ -60,155 +44,90 @@ Install the optional dependency only when live LLM planning is wanted:
 pip install -e ".[llm]"
 ~~~
 
-Then configure credentials in the environment:
+Set credentials through the environment; never commit API keys:
 
 ~~~bash
 export OPENAI_API_KEY="..."
+# Optional: set OPENAI_MODEL to a model available to your account.
 ~~~
 
-Optionally choose a model:
+Live API usage may incur provider charges. CI tests the planner boundary without requiring live API calls.
+
+Example commands:
 
 ~~~bash
-export OPENAI_MODEL="gpt-5.6-luna"
+# Deterministic planning/analysis
+data-analyst ask data/raw/yellow_tripdata_2025-01.parquet "What is the average fare by payment type?"
+
+# Optional OpenAI-backed planning
+data-analyst ask data/raw/yellow_tripdata_2025-01.parquet "What is the average fare by payment type?" --planner openai
 ~~~
 
-Live API usage is separate from the repository's free CI/test path.
+## Stage 2 — Multi-step Analytical Reasoning
 
-CLI:
+Supported complex questions can be decomposed into a validated dependency graph. Later steps can consume selected values from earlier results without allowing the model to execute arbitrary code. Each step records its plan, dependencies, filter bindings, and result. The executor applies a step limit and rejects dependency cycles.
 
-~~~bash
-# Default: deterministic planner, no API call
-data-analyst ask data/yellow_tripdata_2025-01.parquet "What is the average fare_amount by payment_type?"
+## Stage 3 — Evidence & Answer Generation
 
-# Optional: use the OpenAI planner
-data-analyst ask data/yellow_tripdata_2025-01.parquet "What is the average fare_amount by payment_type?" --planner openai
-~~~
+The agent turns structured analytical results into deterministic, evidence-backed answers. Findings reference evidence IDs drawn from results produced by the analytical engine; unsupported result types are identified rather than guessed.
 
-### Stage 2 — Multi-step Analytical Reasoning
+The structured answer includes a concise summary, findings with evidence references, evidence items with source step IDs and values, and limitations when results are insufficient or unsupported. Use `--json` with `ask` to inspect the complete response.
 
-Complex analytical questions can now be decomposed into a validated dependency graph. A later step may consume a value selected by an earlier step without allowing the model to execute arbitrary code.
+## Stage 4 — Data Preparation
 
-Example:
-
-~~~text
-Which payment type has the highest average fare,
-and did that payment type's average fare increase over the year?
-
-Step 1: average fare by payment type → select highest
-Step 2: filter to selected payment type → analyze fare over time
-Step 3: compare first vs last value → summarize direction
-~~~
-
-Each step records its plan, dependencies, applied filter binding, and result. A safety cap limits a plan to eight steps, dependency cycles are rejected, and execution remains inside the existing analytical engine.
-
-The Stage 2 `ask` flow automatically detects the supported multi-step pattern; ordinary Stage 1 questions continue through the existing single-step planner.
-
-### Stage 3 — Evidence & Answer Generation
-
-The agent now turns structured analytical results into deterministic, evidence-backed analyst answers.
-
-Each generated finding carries one or more evidence IDs. Evidence is extracted only from values already returned by the analytical engine, so Stage 3 does not introduce a second LLM generation call or invent statistics. Unsupported result types are reported explicitly rather than guessed.
-
-The answer model contains:
-
-- concise summary
-- findings with evidence references
-- structured evidence items with source step IDs and values
-- explicit limitations when results are insufficient or unsupported
-
-For multi-step analysis, Stage 3 links the selected group from the first step to the first-to-last trend from the final step.
-
-The `ask` CLI prints the analyst-style answer first. Use `--json` for the complete structured response.
-
-
-### Stage 4 — Data Preparation
-
-Stage 4 adds a dataset-agnostic preparation layer that can run before analysis when explicitly requested.
+Stage 4 adds an optional dataset-agnostic preparation layer that runs before analysis when explicitly requested.
 
 Safe automatic transformations include:
 
-- normalize column names to stable snake_case names
-- trim leading/trailing whitespace from strings
-- convert blank strings to null
-- parse obvious datetime columns when at least 95% of non-null values parse successfully
-- drop completely empty columns
+- Normalize column names to stable snake_case names
+- Trim leading and trailing whitespace from strings
+- Convert blank strings to null
+- Parse obvious datetime columns when at least 95% of non-null values parse successfully
+- Drop completely empty columns
 
-Statistical or domain-dependent issues are reported as recommendations rather than silently changed:
+Statistical or domain-dependent issues are reported as recommendations rather than silently changed. Examples include missing-value imputation, row deletion, outlier removal, exact duplicate removal, and domain-specific validity corrections.
 
-- missing-value imputation
-- row deletion due to missing values
-- outlier removal
-- exact duplicate removal
-- domain-specific validity corrections
-
-Every preparation run retains:
-
-- original profile
-- original quality report
-- validated cleaning plan
-- applied transformation trace
-- recommendations
-- prepared profile
-- prepared quality report
-
-The source dataframe is never mutated or overwritten.
-
-CLI:
+A preparation run retains the original profile and quality report, validated cleaning plan, applied transformation trace, recommendations, prepared profile, and prepared quality report. The source dataframe is not mutated or overwritten.
 
 ~~~powershell
+# Inspect preparation recommendations and applied safe transformations
 data-analyst prepare data/raw/yellow_tripdata_2025-01.parquet
+
+# Prepare the data before answering a question
+data-analyst ask data/raw/yellow_tripdata_2025-01.parquet "What is the average fare by payment type?" --prepare
+
+# Inspect the complete structured response
+data-analyst ask data/raw/yellow_tripdata_2025-01.parquet "What is the average fare by payment type?" --prepare --json
 ~~~
 
-Safe preparation can also be applied before an analytical question:
+## Planned work
 
-~~~powershell
-data-analyst ask data/raw/yellow_tripdata_2025-01.parquet "What is the average fare_amount by payment_type?" --prepare
-~~~
+Groq integration, additional visualizations, and broader real-world validation are separate future work unless explicitly implemented and tested. Any future AI provider integration must remain optional, keep secrets outside source control, handle unavailable services and rate limits, and preserve deterministic validation and calculation.
 
-Use `--json` with `ask` to inspect the complete structured response, including the preparation trace when `--prepare` is used.
-
-### Stage 1.4 — Agent Orchestration
-
-The agent connects the question → planner → analytical engine pipeline. The agent does not perform numerical calculations itself; it orchestrates existing analytical tools.
-
-The project deliberately does not commit external datasets to the repository. See docs/data_sources.md for source and download guidance.
-
-## Planned architecture
+## Architecture
 
 ~~~text
-Real dataset
+Real-world dataset
     ↓
-Data ingestion
+Ingestion + schema scan
     ↓
-Dataset profiling
+Profiling + data-quality checks
     ↓
-Data-quality engine
+Optional safe data preparation
     ↓
-Query planning
+Deterministic planner OR optional LLM planner
     ↓
-Agent orchestration
+Validated QueryPlan
     ↓
-Analytical tools
-    ├── statistics
-    ├── grouped analysis
-    ├── time-series analysis
-    └── DuckDB queries
+Single-step or multi-step agent execution
     ↓
-Structured analysis results
+Deterministic analytical engine
+    ↓
+Structured results + execution trace
     ↓
 Evidence extraction + validation
     ↓
 Analyst answer + evidence trace
-    ↓
-[Stage 4] Safe data preparation
-    ↓
-Prepared dataset
-    ↓
-Validated analysis
-    ↓
-Analyst answer + evidence trace
-    ↓
-[Next] Visualizations
 ~~~
 
 ## Technology
@@ -221,10 +140,15 @@ Analyst answer + evidence trace
 - Pytest
 - Optional OpenAI SDK for live LLM planning
 
-## Development policy
+## Development workflow
 
-This repository is being developed incrementally. Each stage is validated before the next layer is introduced. External data remains attributed to its original publisher.
+This repository is developed incrementally. Review the [Development Workflow](docs/WORKFLOW.md) before making changes; it describes the plan-first approval process, Git safety, and validation expectations. Each stage should be reviewed and tested before the next stage is introduced.
 
 ## Status
 
-**Stage 4 — Data Preparation: implementation in progress**
+- **Stage 1.3 — Deterministic query planning:** implemented
+- **Stage 1.5 — Optional OpenAI planner:** implemented
+- **Stage 2 — Multi-step analytical reasoning:** implemented
+- **Stage 3 — Evidence-backed answers:** implemented
+- **Stage 4 — Data preparation:** implementation on the feature branch; pending reconciliation and review
+- **Groq integration:** planned separately; not implemented
