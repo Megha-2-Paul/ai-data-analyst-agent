@@ -10,6 +10,8 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, field
 from typing import Any
 
+from .serialization import json_safe
+
 
 class AnswerGenerationError(ValueError):
     """Raised when an answer cannot be grounded in the supplied evidence."""
@@ -51,12 +53,12 @@ class AnalystAnswer:
     limitations: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        return json_safe({
             "summary": self.summary,
             "findings": [item.to_dict() for item in self.findings],
             "evidence": [item.to_dict() for item in self.evidence],
             "limitations": list(self.limitations),
-        }
+        })
 
     def render_text(self) -> str:
         lines = [self.summary]
