@@ -26,12 +26,13 @@ Register with `POST /api/v1/auth/register`, then log in with `POST /api/v1/auth/
 - `POST /api/v1/datasets` — multipart CSV/Parquet upload.
 - `GET /api/v1/datasets`, `GET /api/v1/datasets/{id}`, `DELETE /api/v1/datasets/{id}`.
 - `GET /api/v1/datasets/{id}/profile`, `GET /api/v1/datasets/{id}/quality`, `POST /api/v1/datasets/{id}/prepare`.
-- `POST /api/v1/datasets/{id}/analyses` — body: `{"question":"...","planner":"deterministic","prepare":false}`.
+- `POST /api/v1/datasets/{id}/analyses` — body: `{"question":"...","planner":"deterministic","prepare":false}`; supports anomaly-detection questions when the optional ML dependency is installed.
+- `POST /api/v1/datasets/{id}/ml-models` — authenticated supervised-model evaluation. Body example: `{"target":"revenue","features":["units","price","region"],"task":"regression","test_size":0.2}`. Choose `classification` for categorical targets. The response is persisted as an analysis run and includes held-out evaluation metrics.
 - `GET /api/v1/analyses`, `GET /api/v1/analyses/{id}`.
 - `POST /api/v1/analyses/{id}/report`, `GET /api/v1/reports`, `GET /api/v1/reports/{id}`, `GET /api/v1/reports/{id}/download`.
 - `GET /api/v1/usage`.
 
-The planner field accepts `deterministic`, `groq`, `gemini`, or `openai`. Provider use requires the matching API key. Reports are downloadable JSON containing the question, result, findings, evidence and limitations.
+The planner field accepts `deterministic`, `groq`, `gemini`, or `openai`. Install the optional ML dependency with `pip install -e ".[ml]"` to enable anomaly detection and supervised model evaluation. Predictive model requests require at least 20 usable target rows and a target that is not included among the features. Provider use requires the matching API key. Reports are downloadable JSON containing the question, result, findings, evidence and limitations.
 
 ## Limits and security
 
