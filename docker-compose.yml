@@ -32,6 +32,16 @@ services:
       db:
         condition: service_healthy
 
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    ports:
+      - "${FRONTEND_PORT:-8080}:80"
+    depends_on:
+      - api
+    restart: unless-stopped
+
 volumes:
   postgres_data:
   uploaded_data:
