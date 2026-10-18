@@ -246,7 +246,7 @@ def test_predictive_model_api_persists_evaluation_and_enforces_workspace_scope(t
         rows.extend(f"{i},{3 * i + (i % 2)}" for i in range(30))
         uploaded = client.post(
             "/api/v1/datasets", headers=headers,
-            files={"file": ("model.csv", ("\\n".join(rows) + "\\n").encode(), "text/csv")},
+            files={"file": ("model.csv", ("\n".join(rows) + "\n").encode(), "text/csv")},
         )
         assert uploaded.status_code == 201, uploaded.text
         dataset_id = uploaded.json()["id"]
