@@ -2,7 +2,7 @@
 
 The FastAPI backend wraps the existing analytical engine. It never executes model-generated code. The deterministic planner is the default and needs no external API key.
 
-## Local setup
+## Local setup and secure configuration
 
 1. Use Python 3.11 or newer and create a virtual environment.
 2. Run `pip install -e ".[dev]"`.
