@@ -78,6 +78,13 @@ def main() -> None:
         default="count",
     )
 
+    ml_predict = subparsers.add_parser("ml-predict", help="Train and evaluate an optional baseline ML model.")
+    ml_predict.add_argument("path", type=Path)
+    ml_predict.add_argument("--target", required=True)
+    ml_predict.add_argument("--features", nargs="+", required=True)
+    ml_predict.add_argument("--task", choices=["regression", "classification"], default="regression")
+    ml_predict.add_argument("--test-size", type=float, default=0.2)
+
     args = parser.parse_args()
 
     # Planning needs only the schema. Keep this path lazy so large datasets
@@ -143,6 +150,18 @@ def main() -> None:
             return
 
         print(json.dumps(result, indent=2, default=str))
+        return
+
+    if args.command == "ml-predict":
+        from .ml import train_predictive_model
+        result = train_predictive_model(
+            df,
+            target=args.target,
+            features=args.features,
+            task=args.task,
+            test_size=args.test_size,
+        )
+        print(json.dumps(result, indent=2, default=str, allow_nan=False))
         return
 
     if args.command == "profile":
