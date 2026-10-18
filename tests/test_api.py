@@ -236,3 +236,34 @@ def test_sqlite_foreign_keys_cascade_dataset_deletion(tmp_path):
         assert deleted.status_code == 204
         assert client.get(f"/api/v1/analyses/{analysis['id']}", headers=headers).status_code == 404
         assert client.get(f"/api/v1/reports/{report['id']}", headers=headers).status_code == 404
+
+
+
+def test_predictive_model_api_persists_evaluation_and_enforces_workspace_scope(tmp_path):
+    with client_for(tmp_path) as client:
+        headers = register(client, "ml-api@example.com")
+        rows = ["feature,target"]
+        rows.extend(f"{i},{3 * i + (i % 2)}" for i in range(30))
+        uploaded = client.post(
+            "/api/v1/datasets", headers=headers,
+            files={"file": ("model.csv", ("\\n".join(rows) + "\\n").encode(), "text/csv")},
+        )
+        assert uploaded.status_code == 201, uploaded.text
+        dataset_id = uploaded.json()["id"]
+
+        response = client.post(
+            f"/api/v1/datasets/{dataset_id}/ml-models", headers=headers,
+            json={"target": "target", "features": ["feature"], "task": "regression"},
+        )
+        assert response.status_code == 201, response.text
+        payload = response.json()
+        assert payload["response"]["analysis"] == "predictive_model_evaluation"
+        assert payload["response"]["result"]["test_rows"] == 6
+        assert "rmse" in payload["response"]["result"]["metrics"]
+
+        stored = client.get(f"/api/v1/analyses/{payload['id']}", headers=headers)
+        assert stored.status_code == 200
+        assert stored.json()["response"]["method"] == "RandomForestRegressor"
+
+        other_headers = register(client, "ml-other@example.com")
+        assert client.get(f"/api/v1/analyses/{payload['id']}", headers=other_headers).status_code == 404
