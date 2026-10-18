@@ -204,7 +204,13 @@ def plan_query(
             if match:
                 candidate = match.group(1).strip()
                 candidate = re.sub(
-                    r"^(?:how|what|when|where|why|did|does|has|have|is|was|were)\s+",
+                    r"^(?:(?:how|what|when|where|why|did|does|has|have|is|was|were|show|give|tell|calculate|compute|find|display)\s+)+",
+                    "",
+                    candidate,
+                    flags=re.IGNORECASE,
+                )
+                candidate = re.sub(
+                    r"^(?:the\s+)?(?:sum|average|mean|total|median|minimum|maximum)\s+(?:of\s+)?",
                     "",
                     candidate,
                     flags=re.IGNORECASE,
