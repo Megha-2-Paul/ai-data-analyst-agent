@@ -30,6 +30,7 @@ from data_analyst.quality import quality_report
 from data_analyst.providers import GeminiPlanner, GroqPlanner
 
 from .database import Base, make_engine, make_session_factory
+from .demo import router as demo_router
 from .models import AnalysisRun, Dataset, Report, UsageEvent, User, Workspace, WorkspaceMember
 from .schemas import (AnalysisRequest, DatasetResponse, ForecastRequest, LoginRequest, MLModelRequest, RegisterRequest, ReportResponse, TokenResponse, UserResponse, WorkspaceCreate, WorkspaceMemberCreate, WorkspaceMemberResponse, WorkspaceResponse)
 from .security import create_access_token, decode_access_token, hash_password, verify_password
@@ -80,6 +81,9 @@ def create_app(
     app.state.storage_dir = root
     app.state.secret_key = configured_secret
     app.state.auto_create_tables = auto_create_tables
+    # Public portfolio demo is isolated: synthetic data or bounded in-memory uploads only.
+    # Existing /api/v1 routes continue to require authentication where configured.
+    app.include_router(demo_router)
 
     def get_db() -> Generator[Session, None, None]:
         db = app.state.session_factory()
