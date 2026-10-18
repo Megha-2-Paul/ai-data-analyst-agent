@@ -146,3 +146,35 @@ def test_plans_filtered_year_time_series():
     assert plan.frequency == "1y"
     assert plan.filter_column == "country"
     assert plan.filter_value == "India"
+
+def test_plans_filtered_year_time_series_with_explicit_average():
+    plan = plan_query(
+        "What was India's average GDP growth over the years?",
+        columns=["country", "country_code", "year", "gdp_growth", "gdp", "population"],
+        numeric_columns=["year", "gdp_growth", "gdp", "population"],
+        datetime_columns=[],
+    )
+    assert plan.operation == "time_series"
+    assert plan.datetime_column == "year"
+    assert plan.metric == "gdp_growth"
+    assert plan.aggregation == "mean"
+    assert plan.frequency == "1y"
+    assert plan.filter_column == "country"
+    assert plan.filter_value == "India"
+
+
+def test_plans_filtered_year_time_series_with_explicit_sum():
+    plan = plan_query(
+        "Show the sum of India's GDP growth over the years",
+        columns=["country", "year", "gdp_growth"],
+        numeric_columns=["year", "gdp_growth"],
+        datetime_columns=[],
+    )
+    assert plan.operation == "time_series"
+    assert plan.datetime_column == "year"
+    assert plan.metric == "gdp_growth"
+    assert plan.aggregation == "sum"
+    assert plan.frequency == "1y"
+    assert plan.filter_column == "country"
+    assert plan.filter_value == "India"
+
