@@ -43,6 +43,7 @@ class QueryPlan:
     assumptions: list[str] = field(default_factory=list)
     filter_column: str | None = None
     filter_value: Any | None = None
+    percentage_of_total: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         result = asdict(self)
@@ -190,6 +191,23 @@ def _detect_sort(question: str) -> str | None:
     if len(directions) > 1:
         raise PlanningError("Conflicting sort directions were requested.")
     return next(iter(directions), None)
+
+
+def _detect_explicit_filter(question: str, columns: Sequence[str]) -> tuple[str, str] | tuple[None, None]:
+    """Recognize explicit, exact-match filters such as 'where status is active'."""
+    for column in sorted(columns, key=len, reverse=True):
+        pattern = (
+            r"\b(?:where|filter(?:ed)? by)\s+"
+            + re.escape(column)
+            + r"\s*(?:is|equals|equal to|=)\s*"
+            + r"""(?:['"]([^'"]+)['"]|([^,;?.]+))"""
+        )
+        match = re.search(pattern, question, flags=re.IGNORECASE)
+        if match:
+            value = (match.group(1) or match.group(2) or "").strip()
+            if value:
+                return column, value
+    return None, None
 
 
 def _one_column(columns: Sequence[str], purpose: str) -> str | None:
@@ -348,6 +366,8 @@ def plan_query(
         )
 
     aggregation = _detect_aggregation(question)
+    filter_column, filter_value = _detect_explicit_filter(question, columns)
+    percentage_of_total = any(term in text for term in ("percentage", "percent", "share of total", "proportion of total"))
     grouped_intent = any(
         term in text for term in (" by ", " per ", " each ", " grouped", "group by")
     )
@@ -402,9 +422,12 @@ def plan_query(
 
         return QueryPlan(
             operation="aggregate",
-            group_by=[group_matches[0]],
+            group_by=group_matches,
             metric=selected_metric,
             aggregation=aggregation,
+            filter_column=filter_column,
+            filter_value=filter_value,
+            percentage_of_total=percentage_of_total,
             sort_direction=_detect_sort(question),
             limit=(
                 _detect_limit(question)
@@ -415,10 +438,23 @@ def plan_query(
             question=question,
         )
 
+    if aggregation and not grouped_intent and not ranking_intent:
+        selected_metric = _one_column(mentioned_numeric, "numeric metric")
+        if aggregation != "count" and selected_metric is None:
+            raise PlanningError("A global aggregation requires an explicitly named numeric metric.")
+        return QueryPlan(
+            operation="aggregate",
+            metric=selected_metric,
+            aggregation=aggregation,
+            question=question,
+            filter_column=filter_column,
+            filter_value=filter_value,
+        )
+
     if any(term in text for term in ("describe", "descriptive statistics", "summary statistics", "statistics for", "distribution of")):
         if not mentioned_numeric:
             raise PlanningError("Descriptive statistics require at least one explicitly named numeric column.")
-        return QueryPlan(operation="describe", columns=mentioned_numeric, question=question)
+        return QueryPlan(operation="describe", columns=mentioned_numeric, question=question, filter_column=filter_column, filter_value=filter_value)
 
     raise PlanningError(
         "Unsupported analytical request. Supported intents: profile, quality, "
