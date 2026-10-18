@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Generator
@@ -53,7 +54,17 @@ def create_app(
     engine = make_engine(db_url)
     session_factory = make_session_factory(engine)
 
+    @asynccontextmanager
+    async def lifespan(application: FastAPI):
+        if application.state.auto_create_tables:
+            Base.metadata.create_all(bind=application.state.engine)
+        try:
+            yield
+        finally:
+            application.state.engine.dispose()
+
     app = FastAPI(
+        lifespan=lifespan,
         title="AI Data Analyst Agent API",
         version="0.2.0",
         description="Authenticated dataset analysis with deterministic calculations and optional AI planning.",
@@ -119,15 +130,6 @@ def create_app(
         if name == "gemini":
             return GeminiPlanner()
         return OpenAIPlanner()
-
-    @app.on_event("startup")
-    def initialize_schema_for_tests_and_local_dev():
-        if app.state.auto_create_tables:
-            Base.metadata.create_all(bind=app.state.engine)
-
-    @app.on_event("shutdown")
-    def dispose_engine():
-        app.state.engine.dispose()
 
     @app.get("/health")
     def health():
@@ -283,7 +285,11 @@ def create_app(
         try:
             response = AnalystAgent(planner=planner).ask(payload.question, df)
             result = response.to_dict()
-        except (PlanningError, LLMPlanningError) as exc:
+        except LLMPlanningError as exc:
+            if "planning request failed" in str(exc).lower():
+                raise HTTPException(status_code=503, detail="The selected AI provider is unavailable or rate limited.")
+            raise HTTPException(status_code=422, detail=str(exc))
+        except PlanningError as exc:
             raise HTTPException(status_code=422, detail=str(exc))
         except Exception:
             raise HTTPException(status_code=422, detail="The analysis request could not be completed for this dataset.")

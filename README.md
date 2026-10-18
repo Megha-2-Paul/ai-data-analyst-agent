@@ -141,7 +141,7 @@ Analyst answer + evidence trace
 - NumPy
 - SciPy
 - Pytest
-- Optional OpenAI SDK for live LLM planning
+- Optional OpenAI, Groq and Gemini SDKs for AI-assisted planning
 
 ## Development workflow
 

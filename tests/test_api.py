@@ -79,6 +79,16 @@ def test_user_cannot_access_another_users_dataset(tmp_path):
         assert client.get(f"/api/v1/datasets/{dataset_id}", headers=other_headers).status_code == 404
         assert client.get(f"/api/v1/datasets/{dataset_id}/profile", headers=other_headers).status_code == 404
         assert client.delete(f"/api/v1/datasets/{dataset_id}", headers=other_headers).status_code == 404
+        analysis = client.post(
+            f"/api/v1/datasets/{dataset_id}/analyses", headers=owner_headers,
+            json={"question": "What is the average revenue by category?", "planner": "deterministic"},
+        ).json()
+        analysis_id = analysis["id"]
+        report = client.post(f"/api/v1/analyses/{analysis_id}/report", headers=owner_headers).json()
+        report_id = report["id"]
+        assert client.get(f"/api/v1/analyses/{analysis_id}", headers=other_headers).status_code == 404
+        assert client.get(f"/api/v1/reports/{report_id}", headers=other_headers).status_code == 404
+        assert client.get(f"/api/v1/reports/{report_id}/download", headers=other_headers).status_code == 404
 
 
 def test_upload_validation_and_size_limit(tmp_path, monkeypatch):
