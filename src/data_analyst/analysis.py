@@ -39,7 +39,9 @@ def describe_numeric(df: pl.DataFrame, column: str) -> dict[str, Any]:
     values = series.drop_nulls()
     if not len(values):
         return {"column": column, "count": 0}
-    return {"column": column, "count": len(values), "missing": series.null_count(), "mean": values.mean(), "median": values.median(), "std": values.std(), "min": values.min(), "q25": _linear_quantile(values, .25), "q75": _linear_quantile(values, .75), "max": values.max()}
+    q25 = _linear_quantile(values, .25)
+    q75 = _linear_quantile(values, .75)
+    return {"column": column, "count": len(values), "missing": series.null_count(), "missing_rate": series.null_count() / len(series) if len(series) else 0.0, "mean": values.mean(), "median": values.median(), "std": values.std(), "variance": values.var(), "min": values.min(), "q25": q25, "q75": q75, "iqr": q75 - q25, "max": values.max()}
 
 
 def value_counts(df: pl.DataFrame, column: str, limit: int = 10) -> pl.DataFrame:
@@ -71,9 +73,10 @@ def describe(df: pl.DataFrame, columns: Sequence[str] | None = None) -> dict[str
     rows = []
     for column in selected:
         values = df.get_column(column).drop_nulls()
-        row = {"column": column, "count": len(values), "missing": df.get_column(column).null_count()}
+        missing = df.get_column(column).null_count()
+        row = {"column": column, "count": len(values), "missing": missing, "missing_rate": missing / df.height if df.height else 0.0}
         if len(values):
-            row.update({"mean": values.mean(), "median": values.median(), "std": values.std(), "min": values.min(), "p25": _linear_quantile(values, .25), "p50": _linear_quantile(values, .50), "p75": _linear_quantile(values, .75), "p95": _linear_quantile(values, .95), "max": values.max(), "unique": values.n_unique()})
+            row.update({"mean": values.mean(), "median": values.median(), "std": values.std(), "min": values.min(), "p25": _linear_quantile(values, .25), "p50": _linear_quantile(values, .50), "p75": _linear_quantile(values, .75), "p95": _linear_quantile(values, .95), "max": values.max(), "iqr": _linear_quantile(values, .75) - _linear_quantile(values, .25), "variance": values.var(), "zero_count": int((values == 0).sum()), "negative_count": int((values < 0).sum()), "unique": values.n_unique()})
         rows.append(row)
     return _result("descriptive_statistics", {"columns": selected}, rows, row_count=df.height)
 
