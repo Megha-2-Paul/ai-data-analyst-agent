@@ -12,7 +12,7 @@ The FastAPI backend wraps the existing analytical engine. It never executes mode
 6. Start with `uvicorn data_analyst.api.main:app --env-file .env --reload`.
 7. Open `http://127.0.0.1:8000/docs` for interactive OpenAPI docs.
 
-For Docker, configure `.env` and run `docker compose up --build`. The compose service runs migrations before starting the API.
+For Docker, copy `.env.example` to `.env`, replace `APP_SECRET_KEY` and `POSTGRES_PASSWORD` with unique values, then run `docker compose up --build`. Use a URL-safe database password because Compose embeds it in `DATABASE_URL`. The Compose service runs in production mode, rejects the example secret, and runs migrations before starting the API.
 
 ## Authentication
 
@@ -37,4 +37,4 @@ The planner field accepts `deterministic`, `groq`, `gemini`, or `openai`. Provid
 
 The default upload limit is 25 MiB (`MAX_UPLOAD_BYTES`) and the default analysis limit is 100 runs per user per rolling 24 hours (`MAX_DAILY_ANALYSES`). New users receive a personal workspace. Workspace owners can add already-registered users; members can collaborate on datasets, analyses and reports within that workspace. Only the uploader or workspace owner can delete a dataset. Dataset files use random storage keys, are not served as static files, and are only opened after workspace membership checks. API errors do not disclose filesystem paths or database details.
 
-Before public deployment, configure HTTPS, a strong secret, backups, restricted network access, storage quotas/retention, database credentials, monitoring and a privacy policy. This initial API processes analysis synchronously and uses local file storage; very large or long-running workloads may need background workers and object storage.
+Before public deployment, configure HTTPS, a unique application secret and database password, backups, restricted network access, storage quotas/retention, monitoring, request-rate limiting at a reverse proxy/API gateway, and a privacy policy. The application enforces a per-user analysis quota, but that is not a substitute for edge-level rate limiting on authentication and upload endpoints. This initial API processes analysis synchronously and uses local file storage; very large or long-running workloads may need background workers and object storage.
