@@ -33,7 +33,7 @@ class QueryPlan:
     columns: list[str] = field(default_factory=list)
     group_by: list[str] = field(default_factory=list)
     metric: str | None = None
-    agg: str | None = None
+    aggregation: str | None = None
     datetime_column: str | None = None
     frequency: str | None = None
     sort_direction: str | None = None
@@ -45,13 +45,13 @@ class QueryPlan:
 
     def to_dict(self) -> dict[str, Any]:
         result = asdict(self)
-        result["aggregation"] = self.agg
+        result["agg"] = self.aggregation
         return result
 
     @property
-    def aggregation(self) -> str | None:
-        """Compatibility alias for the analysis API's ``agg`` parameter."""
-        return self.agg
+    def agg(self) -> str | None:
+        """Compatibility alias for callers using the analysis API's ``agg`` name."""
+        return self.aggregation
 
 
 _AGGREGATIONS = {
@@ -326,7 +326,7 @@ def plan_query(
             operation="time_series",
             datetime_column=datetime_column,
             metric=metric,
-            agg=aggregation,
+            aggregation=aggregation,
             frequency=frequency,
             question=question,
             assumptions=assumptions,
@@ -375,7 +375,7 @@ def plan_query(
             operation="aggregate",
             group_by=[group_matches[0]],
             metric=selected_metric,
-            agg=aggregation,
+            aggregation=aggregation,
             sort_direction=_detect_sort(question),
             limit=_detect_limit(question),
             question=question,
