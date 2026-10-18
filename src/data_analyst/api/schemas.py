@@ -112,3 +112,42 @@ class ReportResponse(BaseModel):
     title: str
     created_at: datetime
     model_config = ConfigDict(from_attributes=True)
+
+
+class MLModelRequest(BaseModel):
+    target: str = Field(min_length=1, max_length=200)
+    features: list[str] = Field(min_length=1, max_length=100)
+    task: str = "regression"
+    test_size: float = Field(default=0.2, ge=0.1, le=0.4)
+
+    @field_validator("target")
+    @classmethod
+    def normalize_target(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("target cannot be blank.")
+        return value
+
+    @field_validator("features")
+    @classmethod
+    def normalize_features(cls, values: list[str]) -> list[str]:
+        normalized = list(dict.fromkeys(value.strip() for value in values if value.strip()))
+        if not normalized:
+            raise ValueError("At least one non-blank feature is required.")
+        return normalized
+
+    @field_validator("task")
+    @classmethod
+    def validate_task(cls, value: str) -> str:
+        value = value.strip().lower()
+        if value not in {"regression", "classification"}:
+            raise ValueError("task must be regression or classification.")
+        return value
+
+    @field_validator("features")
+    @classmethod
+    def target_not_in_features(cls, values: list[str], info):
+        target = info.data.get("target")
+        if target and target in values:
+            raise ValueError("target cannot also be a feature.")
+        return values
