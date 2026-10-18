@@ -105,10 +105,16 @@ def _execute_plan(df: pl.DataFrame, plan: QueryPlan) -> Any:
             result["parameters"]["limit"] = plan.limit
         if plan.sort_direction and isinstance(result.get("result"), list):
             rows = result["result"]
-            rows.sort(
-                key=lambda row: (row.get(plan.metric) is None, row.get(plan.metric)),
+            # Sort only non-null values in the requested direction, then append
+            # null aggregates. Using reverse=True on a tuple key would also
+            # reverse the null placement and could rank missing values first.
+            non_null_rows = [row for row in rows if row.get(plan.metric) is not None]
+            null_rows = [row for row in rows if row.get(plan.metric) is None]
+            non_null_rows.sort(
+                key=lambda row: row[plan.metric],
                 reverse=plan.sort_direction == "desc",
             )
+            rows = non_null_rows + null_rows
             if plan.limit:
                 result["result"] = rows[: plan.limit]
         return result
