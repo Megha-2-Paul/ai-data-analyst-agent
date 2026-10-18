@@ -264,6 +264,15 @@ def test_predictive_model_api_persists_evaluation_and_enforces_workspace_scope(t
         stored = client.get(f"/api/v1/analyses/{payload['id']}", headers=headers)
         assert stored.status_code == 200
         assert stored.json()["response"]["method"] == "RandomForestRegressor"
+        assert stored.json()["response"]["answer"]["evidence"]
+
+        anomaly = client.post(
+            f"/api/v1/datasets/{dataset_id}/analyses", headers=headers,
+            json={"question": "Find outliers in target", "planner": "deterministic"},
+        )
+        assert anomaly.status_code == 201, anomaly.text
+        assert anomaly.json()["response"]["result"]["analysis"] == "anomaly_detection"
+        assert anomaly.json()["response"]["answer"]["summary"]
 
         other_headers = register(client, "ml-other@example.com")
         assert client.get(f"/api/v1/analyses/{payload['id']}", headers=other_headers).status_code == 404
