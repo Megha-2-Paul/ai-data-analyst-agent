@@ -153,9 +153,9 @@ This repository is developed incrementally. Review the [Development Workflow](do
 - **Stage 1.5 — Optional OpenAI planner:** implemented
 - **Stage 2 — Multi-step analytical reasoning:** implemented
 - **Stage 3 — Evidence-backed answers:** implemented
-- **Stage 4 — Data preparation:** implemented on `stage-4-data-preparation`; not merged into `main`, under final validation and review
+- **Stage 4 — Data preparation:** implemented on `stage-4-data-preparation`; not merged into `main`
 - **Groq and Gemini providers:** optional adapters with offline tests and opt-in live smoke tests
-- **Backend API:** implemented on `stage-4-data-preparation`; requires database migration and environment configuration before use
+- **Backend API:** implemented on `stage-4-data-preparation`; requires database migration and secure environment configuration before use
 
 
 ## Backend API
