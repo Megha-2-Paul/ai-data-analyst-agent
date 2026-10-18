@@ -396,7 +396,7 @@ def create_app(
         db.refresh(run)
         return {"id": run.id, "workspace_id": d.workspace_id, "dataset_id": d.id, "status": run.status, "created_at": run.created_at, "response": result}
 
-    @app.post(f"{API_PREFIX}/datasets/{'{'}dataset_id{'}'}/ml-models", status_code=201)
+    @app.post(f"{API_PREFIX}/datasets/{{dataset_id}}/ml-models", status_code=201)
     def create_ml_model_evaluation(
         dataset_id: int, payload: MLModelRequest,
         db: Session = Depends(get_db), user: User = Depends(current_user),
