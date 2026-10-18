@@ -343,8 +343,9 @@ def plan_query(
         for term in ("highest", "largest", "maximum", "lowest", "smallest", "minimum", "top", "bottom")
     )
     if aggregation and (grouped_intent or ranking_intent):
-        # Exclude the chosen metric and temporal columns, but allow numeric
-        # grouping dimensions such as payment_type.
+        # Exclude temporal columns from grouping candidates, but allow numeric
+        # grouping dimensions such as payment_type. Select the metric only after
+        # resolving the grouping column so multiple metrics cannot be guessed.
         selected_metric = mentioned_numeric[0] if mentioned_numeric else None
         group_candidates = [
             column for column in columns
@@ -365,11 +366,17 @@ def plan_query(
         group_matches = list(dict.fromkeys(group_matches))
         if not group_matches:
             raise PlanningError("Grouped analysis requires an explicitly named grouping column.")
-        if selected_metric in group_matches:
-            remaining_metrics = [column for column in mentioned_numeric if column not in group_matches]
-            selected_metric = _one_column(remaining_metrics, "numeric metric")
-        if aggregation != "count" and selected_metric is None:
-            raise PlanningError("Grouped metric analysis requires an explicitly named numeric metric.")
+
+        metric_candidates = [
+            column for column in mentioned_numeric
+            if column not in group_matches and column not in mentioned_datetime
+        ]
+        if aggregation != "count":
+            selected_metric = _one_column(metric_candidates, "numeric metric")
+            if selected_metric is None:
+                raise PlanningError("Grouped metric analysis requires an explicitly named numeric metric.")
+        else:
+            selected_metric = metric_candidates[0] if metric_candidates else None
 
         return QueryPlan(
             operation="aggregate",
