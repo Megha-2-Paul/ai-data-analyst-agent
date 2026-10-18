@@ -143,11 +143,3 @@ class MLModelRequest(BaseModel):
         if value not in {"regression", "classification"}:
             raise ValueError("task must be regression or classification.")
         return value
-
-    @field_validator("features")
-    @classmethod
-    def target_not_in_features(cls, values: list[str], info):
-        target = info.data.get("target")
-        if target and target in values:
-            raise ValueError("target cannot also be a feature.")
-        return values
