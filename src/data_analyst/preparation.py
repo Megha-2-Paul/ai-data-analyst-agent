@@ -10,6 +10,7 @@ import polars as pl
 from .cleaning import CleaningPlan, CleaningResult, apply_cleaning_plan, build_cleaning_plan
 from .profiling import profile_dataset
 from .quality import quality_report
+from .serialization import json_safe
 
 
 @dataclass(frozen=True)
@@ -28,14 +29,14 @@ class PreparationResult:
         return self.cleaning.dataframe
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        return json_safe({
             "original_profile": self.original_profile,
             "original_quality": self.original_quality,
             "plan": self.plan.to_dict(),
             "cleaning": self.cleaning.to_dict(),
             "prepared_profile": self.prepared_profile,
             "prepared_quality": self.prepared_quality,
-        }
+        })
 
 
 def prepare_dataset(
