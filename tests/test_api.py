@@ -1,5 +1,6 @@
 """API integration tests using an isolated SQLite database and temporary storage."""
 
+import pytest
 from fastapi.testclient import TestClient
 
 from data_analyst.api.database import Base, make_engine
@@ -192,3 +193,46 @@ def test_workspace_members_can_collaborate_but_only_owners_can_delete_datasets(t
         report_id = report.json()["id"]
         assert client.get(f"/api/v1/reports/{report_id}", headers=owner_headers).status_code == 200
         assert client.delete(f"/api/v1/datasets/{dataset_id}", headers=member_headers).status_code == 403
+
+
+
+def test_production_rejects_example_secret(tmp_path, monkeypatch):
+    monkeypatch.setenv("APP_ENV", "production")
+    monkeypatch.setenv("APP_SECRET_KEY", "replace-with-a-unique-random-secret-at-least-32-characters")
+    with pytest.raises(RuntimeError, match="unique random secret"):
+        create_app(database_url=f"sqlite:///{tmp_path / 'production.sqlite'}", storage_dir=tmp_path / "uploads")
+
+
+def test_non_owner_cannot_add_workspace_members(tmp_path):
+    with client_for(tmp_path) as client:
+        owner_headers = register(client, "team-owner@example.com")
+        member_headers = register(client, "team-member@example.com")
+        third_headers = register(client, "team-third@example.com")
+        workspace = client.post("/api/v1/workspaces", headers=owner_headers, json={"name": "Private team"}).json()
+        workspace_id = workspace["id"]
+        added = client.post(
+            f"/api/v1/workspaces/{workspace_id}/members",
+            headers=owner_headers, json={"email": "team-member@example.com"},
+        )
+        assert added.status_code == 201
+        denied = client.post(
+            f"/api/v1/workspaces/{workspace_id}/members",
+            headers=member_headers, json={"email": "team-third@example.com"},
+        )
+        assert denied.status_code == 403
+        assert client.get(f"/api/v1/workspaces/{workspace_id}/members", headers=third_headers).status_code == 404
+
+
+def test_sqlite_foreign_keys_cascade_dataset_deletion(tmp_path):
+    with client_for(tmp_path) as client:
+        headers = register(client, "cascade@example.com")
+        dataset = upload_csv(client, headers).json()
+        analysis = client.post(
+            f"/api/v1/datasets/{dataset['id']}/analyses", headers=headers,
+            json={"question": "What is the average revenue by category?", "planner": "deterministic"},
+        ).json()
+        report = client.post(f"/api/v1/analyses/{analysis['id']}/report", headers=headers).json()
+        deleted = client.delete(f"/api/v1/datasets/{dataset['id']}", headers=headers)
+        assert deleted.status_code == 204
+        assert client.get(f"/api/v1/analyses/{analysis['id']}", headers=headers).status_code == 404
+        assert client.get(f"/api/v1/reports/{report['id']}", headers=headers).status_code == 404
