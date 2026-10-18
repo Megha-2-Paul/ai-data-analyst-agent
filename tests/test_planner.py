@@ -38,6 +38,46 @@ def test_plans_top_n_grouped_query():
     assert plan.limit == 5
 
 
+@pytest.mark.parametrize(
+    ("question", "direction"),
+    [
+        ("Which payment_type has the highest average fare_amount?", "desc"),
+        ("Which payment_type has the lowest average fare_amount?", "asc"),
+        ("Which fare_amount has the highest average payment_type?", "desc"),
+    ],
+)
+def test_plans_which_ranking_with_group_and_metric_roles(question, direction):
+    # payment_type is deliberately included in numeric_columns to reproduce
+    # schemas where a numeric-looking category can be mistaken for the metric.
+    plan = plan_query(
+        question,
+        columns=COLUMNS,
+        numeric_columns=["payment_type", "fare_amount", "trip_distance"],
+        datetime_columns=DATETIME,
+    )
+
+    assert plan.operation == "aggregate"
+    expected_group = "fare_amount" if "Which fare_amount" in question else "payment_type"
+    expected_metric = "payment_type" if expected_group == "fare_amount" else "fare_amount"
+    assert plan.group_by == [expected_group]
+    assert plan.metric == expected_metric
+    assert plan.sort_direction == direction
+    assert plan.limit == 1
+
+
+def test_explicit_top_n_ranking_keeps_requested_limit():
+    plan = plan_query(
+        "Show the top 5 payment_type groups by highest average fare_amount",
+        columns=COLUMNS,
+        numeric_columns=["payment_type", "fare_amount", "trip_distance"],
+        datetime_columns=DATETIME,
+    )
+
+    assert plan.group_by == ["payment_type"]
+    assert plan.metric == "fare_amount"
+    assert plan.limit == 5
+
+
 def test_plans_correlation():
     plan = plan_query(
         "What is the correlation between fare_amount and trip_distance?",
