@@ -256,6 +256,7 @@ def plan_query(
 
     mentioned_numeric = _numeric_columns(question, columns, numeric_columns)
     mentioned_datetime = _datetime_columns(question, columns, datetime_columns)
+    filter_column, filter_value = _detect_explicit_filter(question, columns)
 
     anomaly_intent = any(term in text for term in ("anomaly", "anomalies", "outlier", "outliers", "unusual records", "unusual observations"))
     if anomaly_intent:
@@ -277,6 +278,8 @@ def plan_query(
             operation="correlation",
             columns=selected,
             question=question,
+            filter_column=filter_column,
+            filter_value=filter_value,
         )
 
     frequency = _detect_frequency(question, columns)
@@ -315,8 +318,6 @@ def plan_query(
             label = "yearly (1y)" if frequency == "1y" else "daily (1d)"
             assumptions.append(f"No time frequency was specified; defaulted to {label}.")
 
-        filter_column = None
-        filter_value = None
         numeric_set = set(numeric_columns or [])
         datetime_set = set(datetime_columns or [])
         non_temporal_categorical = [
@@ -366,7 +367,6 @@ def plan_query(
         )
 
     aggregation = _detect_aggregation(question)
-    filter_column, filter_value = _detect_explicit_filter(question, columns)
     percentage_of_total = any(term in text for term in ("percentage", "percent", "share of total", "proportion of total"))
     grouped_intent = any(
         term in text for term in (" by ", " per ", " each ", " grouped", "group by")
