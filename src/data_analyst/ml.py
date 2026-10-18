@@ -140,6 +140,8 @@ def train_predictive_model(
         finite = np.isfinite(y)
         subset = subset.filter(pl.Series(finite))
         y = y[finite]
+        if len(y) < 20:
+            raise MLAnalysisError("At least 20 finite numeric target rows are required.")
     else:
         y = y_series.cast(pl.String).to_numpy()
         if len(np.unique(y)) < 2:
@@ -168,6 +170,8 @@ def train_predictive_model(
         raise MLAnalysisError("No usable feature columns remain after preprocessing.")
     preprocessor = lib["ColumnTransformer"](transformers)
     stratify = y if task == "classification" and min(np.unique(y, return_counts=True)[1]) >= 2 else None
+    if stratify is not None and int(np.ceil(len(y) * test_size)) < len(np.unique(y)):
+        raise MLAnalysisError("test_size is too small to include every class in the held-out split.")
     X_train, X_test, y_train, y_test = lib["train_test_split"](
         X, y, test_size=test_size, random_state=random_state, stratify=stratify
     )
