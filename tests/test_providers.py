@@ -63,3 +63,9 @@ def test_provider_rejects_invalid_model_output(planner_cls):
     client = FakeGroq('{"operation":"execute_python"}') if planner_cls is GroqPlanner else FakeGemini('{"operation":"execute_python"}')
     with pytest.raises(LLMPlanningError, match="Unsupported operation"):
         plan_with(planner_cls(client=client))
+
+def test_provider_defaults_survive_empty_model_environment_variables(monkeypatch):
+    monkeypatch.setenv("GROQ_MODEL", "")
+    monkeypatch.setenv("GEMINI_MODEL", "")
+    assert GroqPlanner()._model == "openai/gpt-oss-120b"
+    assert GeminiPlanner()._model == "gemini-3.8-flash"

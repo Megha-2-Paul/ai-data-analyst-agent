@@ -34,7 +34,7 @@ class GroqPlanner:
 
     def __init__(self, client: Any | None = None, model: str | None = None) -> None:
         self._client = client
-        self._model = model or os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")
+        self._model = model or (os.getenv("GROQ_MODEL") or "openai/gpt-oss-120b")
 
     def _get_client(self):
         if self._client is not None:
@@ -81,7 +81,7 @@ class GeminiPlanner:
 
     def __init__(self, client: Any | None = None, model: str | None = None) -> None:
         self._client = client
-        self._model = model or os.getenv("GEMINI_MODEL", "gemini-3.8-flash")
+        self._model = model or (os.getenv("GEMINI_MODEL") or "gemini-3.8-flash")
 
     def _get_client(self):
         if self._client is not None:
