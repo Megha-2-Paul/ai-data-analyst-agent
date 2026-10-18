@@ -150,5 +150,5 @@ This repository is developed incrementally. Review the [Development Workflow](do
 - **Stage 1.5 — Optional OpenAI planner:** implemented
 - **Stage 2 — Multi-step analytical reasoning:** implemented
 - **Stage 3 — Evidence-backed answers:** implemented
-- **Stage 4 — Data preparation:** implementation on the feature branch; pending reconciliation and review
+- **Stage 4 — Data preparation:** implemented on `stage-4-data-preparation`; reconciled with `main`, under final validation and review
 - **Groq integration:** planned separately; not implemented
