@@ -84,15 +84,26 @@ def _execute_plan(df: pl.DataFrame, plan: QueryPlan) -> Any:
             raise AgentExecutionError("Aggregate plan is missing group_by.")
         if not plan.metric:
             if plan.aggregation == "count":
-                return {
+                result = {
                     "analysis": "grouped_count",
                     "parameters": {
                         "group_by": plan.group_by,
+                        "metric": "count",
                         "aggregation": "count",
                     },
                     "result": df.group_by(plan.group_by, maintain_order=True).len(name="count").to_dicts(),
                     "metadata": {"row_count": df.height},
                 }
+                if plan.sort_direction:
+                    result["parameters"]["sort_direction"] = plan.sort_direction
+                    result["result"].sort(
+                        key=lambda row: row["count"],
+                        reverse=plan.sort_direction == "desc",
+                    )
+                if plan.limit:
+                    result["parameters"]["limit"] = plan.limit
+                    result["result"] = result["result"][: plan.limit]
+                return result
             raise AgentExecutionError("Aggregate plan is missing metric.")
         result = aggregate(
             df,
