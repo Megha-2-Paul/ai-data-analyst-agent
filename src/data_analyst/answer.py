@@ -242,6 +242,30 @@ def _single_step_evidence(result: dict[str, Any], source: str = "step_1") -> tup
             limitations.append("Only the five highest-scoring flagged rows are included in the narrative; the structured result contains all flagged rows.")
         return evidence, findings, summary, limitations
 
+    if analysis == "time_series_forecast":
+        metadata = result.get("metadata", {})
+        payload = result.get("result", {})
+        metrics = payload.get("metrics", {}) if isinstance(payload, dict) else {}
+        forecasts = payload.get("future_forecast", []) if isinstance(payload, dict) else []
+        for name, value in metrics.items():
+            if not isinstance(value, (int, float)):
+                continue
+            eid = _add(evidence, source, "forecast_metric", f"{name} for time-series forecast", metric=name, value=value)
+            findings.append(Finding(f"f{len(findings) + 1}", f"{name} = {_fmt(value)} on the chronological holdout.", [eid]))
+        for forecast in forecasts:
+            step = forecast.get("step_ahead")
+            value = forecast.get("predicted_value")
+            eid = _add(evidence, source, "forecast_value", f"Forecast step {step}", step_ahead=step, predicted_value=value)
+            findings.append(Finding(f"f{len(findings) + 1}", f"Forecast step {step}: {_fmt(value)}.", [eid]))
+        summary = f"The model generated {len(forecasts)} forecast step(s) after the last observed time point."
+        limitations.extend(metadata.get("limitations", []))
+        if "rmse" in metrics and "naive_rmse" in metrics:
+            if metrics["rmse"] < metrics["naive_rmse"]:
+                summary += " Its holdout RMSE was lower than the naive baseline."
+            else:
+                summary += " Its holdout RMSE did not beat the naive baseline."
+        return evidence, findings, summary, limitations
+
     if analysis == "predictive_model_evaluation":
         metadata = result.get("metadata", {})
         payload = result.get("result", {})
