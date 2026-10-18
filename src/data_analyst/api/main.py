@@ -46,8 +46,12 @@ def create_app(
 ) -> FastAPI:
     environment = os.getenv("APP_ENV", "development").lower()
     configured_secret = secret_key or os.getenv("APP_SECRET_KEY")
-    if environment == "production" and (not configured_secret or len(configured_secret) < 32):
-        raise RuntimeError("APP_SECRET_KEY must be configured with at least 32 characters in production.")
+    placeholder_secrets = {"local-development-secret-change-before-deployment", "replace-with-a-random-secret-at-least-32-characters", "replace-with-a-unique-random-secret-at-least-32-characters", "changeme", "change-me"}
+    if environment == "production" and (
+        not configured_secret or len(configured_secret) < 32
+        or configured_secret.strip().lower() in placeholder_secrets
+    ):
+        raise RuntimeError("APP_SECRET_KEY must be a unique random secret of at least 32 characters in production; replace the example placeholder.")
     configured_secret = configured_secret or "local-development-secret-change-before-deployment"
     db_url = database_url or os.getenv("DATABASE_URL", "sqlite:///./ai_data_analyst.db")
     root = storage_root(storage_dir)
