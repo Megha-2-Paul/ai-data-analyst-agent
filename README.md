@@ -188,17 +188,27 @@ This repository is developed incrementally. Review the [Development Workflow](do
 - **Backend API:** implemented on `stage-4-data-preparation`; requires database migration and secure environment configuration before use
 
 
-## Frontend dashboard
+## Analyst-first frontend demo
 
-A lightweight responsive browser dashboard lives in `frontend/` and is served by Nginx in Docker Compose. It includes account registration/sign-in, workspace overview, CSV/Parquet upload, dataset profile and quality inspection, natural-language analysis with deterministic/Groq/Gemini/OpenAI planner selection, optional preparation, analysis history, JSON report creation/download, and usage-event summaries. The browser token is held in `sessionStorage` and sent as a bearer token; the UI never asks for provider API keys. Nginx proxies `/api/` to FastAPI on the internal Compose network to avoid browser CORS configuration.
+The frontend in `frontend/` is a practical analyst workspace rather than a static KPI mockup. It includes:
 
-Start the full stack after configuring `.env` from `.env.example` with a unique `APP_SECRET_KEY` and `POSTGRES_PASSWORD`:
+- **Overview:** actual row/column counts, completeness, duplicate counts, quality findings, and a data preview.
+- **Data & quality:** column types, missingness, uniqueness, descriptive statistics, IQR outlier flags, and record preview.
+- **Analyze:** natural-language questions executed through the Python analytical engine, with the validated plan, execution trace, result payload, evidence, and limitations.
+- **Prepare data:** reviewable preparation plan with before/after profiles and recommendations; no silent imputation or outlier deletion.
+- **Reports:** export the actual result or preparation report as JSON for review.
+
+### Public portfolio demo
+
+The unauthenticated, read-only demo routes are isolated under `/api/v1/demo`. They use a small synthetic dataset by default. Visitors can optionally upload a CSV or Parquet file up to 5 MB; the API parses it in memory for that request and does not persist the upload or write it to the user/workspace database. Demo uploads are capped at 100,000 rows and 200 columns. This demo route does not expose authenticated users' datasets and does not disable authentication on existing production endpoints.
+
+Start the stack after configuring `.env` from `.env.example` with a unique `APP_SECRET_KEY` and `POSTGRES_PASSWORD`:
 
 ~~~bash
 docker compose up --build
 ~~~
 
-Then open `http://localhost:8080`. The API docs remain available at `http://localhost:8000/docs`. The initial frontend is an MVP: no charting library, password reset, workspace switching, member management UI, or frontend automated browser tests yet. Do not expose it publicly before HTTPS, edge rate limiting, secure deployment configuration, backups, retention, and privacy requirements are addressed.
+Then open `http://localhost:8080`. API documentation is available at `http://localhost:8000/docs`. Nginx proxies `/api/` to FastAPI over the internal Compose network. For real authenticated workflows, use the existing authenticated API endpoints. Before public production deployment, add HTTPS, edge rate limiting, secure deployment configuration, backups, retention controls, and a documented privacy policy.
 
 ## Backend API
 
