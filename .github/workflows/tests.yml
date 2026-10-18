@@ -27,3 +27,10 @@ jobs:
 
       - name: Run tests
         run: pytest
+
+      - name: Build Docker image
+        run: docker build -t ai-data-analyst-agent:ci .
+      - name: Validate Docker Compose configuration
+        run: |
+          cp .env.example .env
+          docker compose config --quiet
