@@ -1,6 +1,42 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#111d31"><title>AI Data Analyst | Portfolio Demo</title><link rel="stylesheet" href="/styles.css"></head><body>
-<div id="toast" class="toast" role="status" aria-live="polite"></div>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#142238">
+  <meta name="description" content="A transparent, evidence-first AI data analyst workspace.">
+  <title>AI Data Analyst | Analyst Workspace</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
 <div class="app-shell">
-<aside class="sidebar"><a class="brand" href="#"><span class="brand-mark">∑</span><span>AI DATA ANALYST<small>INSIGHT WORKSPACE</small></span></a><div class="workspace-label">WORKSPACE</div><div class="workspace-pill"><span class="status-dot"></span><span>Portfolio demo</span><span class="demo-badge">DEMO</span></div><nav class="nav"><button class="nav-item active" data-view="overview">▦ Dashboard</button><button class="nav-item" data-view="datasets">▤ Datasets <b id="dataset-count" class="nav-count">3</b></button><button class="nav-item" data-view="analysis">⌕ Analysis</button><button class="nav-item" data-view="reports">▧ Reports</button><button class="nav-item" data-view="examples">◇ Examples</button><button class="nav-item" data-view="about">ⓘ About</button></nav><div class="sidebar-bottom"><div class="engine-note"><span class="status-dot"></span><div><strong>Analytical engine</strong><small>Deterministic by default</small></div></div><div class="profile"><div class="avatar">MP</div><div class="profile-text"><strong>Portfolio preview</strong><small>No account required</small></div></div></div></aside>
-<main class="main"><header class="topbar"><div><div class="breadcrumb">Workspace <span>/</span> <b id="page-label">Dashboard</b></div><h1 id="page-title">Welcome to AI Data Analyst ✨</h1><p class="top-subtitle">Upload your data, ask questions, and get insights using AI and analytics.</p></div><div class="top-actions"><span class="secure-chip">● No login required</span><button class="btn primary" data-goto="datasets">＋ Upload dataset</button></div></header><div class="demo-notice"><strong>Portfolio demo mode</strong><span>Uses synthetic sample data. No login, API key, or private dataset required. Demo actions run locally in this browser.</span></div><div id="page-content" class="content"></div><footer>AI DATA ANALYST · PORTFOLIO BUILD <span>Demo results are illustrative. Use the authenticated backend for real analysis.</span></footer></main></div><script src="/app.js" defer></script></body></html>
+  <aside class="sidebar">
+    <a class="brand" href="#" aria-label="AI Data Analyst home"><span class="brand-mark">∑</span><span>AI DATA ANALYST<small>ANALYST WORKSPACE</small></span></a>
+    <div class="workspace-label">WORKSPACE</div>
+    <div class="workspace-pill"><span class="status-dot"></span><span>Public demo</span><span class="demo-badge">DEMO</span></div>
+    <nav class="nav" aria-label="Main navigation">
+      <button class="nav-item active" data-view="overview">▦ Overview</button>
+      <button class="nav-item" data-view="data">▤ Data & quality</button>
+      <button class="nav-item" data-view="analysis">⌕ Analyze</button>
+      <button class="nav-item" data-view="prepare">⚙ Prepare data</button>
+      <button class="nav-item" data-view="reports">▧ Reports</button>
+    </nav>
+    <div class="sidebar-bottom">
+      <div class="engine-note"><span class="status-dot"></span><div><strong>Calculation engine</strong><small>Python · Polars · evidence-first</small></div></div>
+      <div class="privacy-note">Uploads are processed in memory for this demo and are not saved.</div>
+    </div>
+  </aside>
+  <main class="main">
+    <header class="topbar">
+      <div><div class="breadcrumb">Workspace <span>/</span> <b id="page-label">Overview</b></div><h1 id="page-title">Analyst workspace</h1><p id="page-subtitle" class="top-subtitle">Understand your data before drawing conclusions.</p></div>
+      <div class="top-actions"><span class="secure-chip">● No login required</span><button class="btn primary" data-goto="data">＋ Select data</button></div>
+    </header>
+    <div class="demo-notice"><strong>Portfolio demo</strong><span>Start with a synthetic dataset or upload a CSV/Parquet file up to 5 MB. Calculations run through the Python engine; files are not persisted.</span></div>
+    <div id="status" class="status-line" role="status" aria-live="polite"></div>
+    <div id="page-content" class="content"><div class="loading">Loading the synthetic sample dataset…</div></div>
+    <footer>AI DATA ANALYST · EVIDENCE BEFORE EXPLANATION <span>Public demo is isolated from authenticated user workspaces.</span></footer>
+  </main>
+</div>
+<script src="/app.js" defer></script>
+</body>
+</html>
