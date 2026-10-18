@@ -47,7 +47,7 @@ def _validate_plan_payload(payload, *, question, columns, numeric_columns, datet
         raise LLMPlanningError(f"LLM response contains unsupported fields: {sorted(unknown)}")
 
     operation = payload.get("operation")
-    if operation not in _ALLOWED_OPERATIONS:
+    if not isinstance(operation, str) or operation not in _ALLOWED_OPERATIONS:
         raise LLMPlanningError(f"Unsupported operation from LLM: {operation!r}")
 
     available = set(columns)
@@ -70,6 +70,8 @@ def _validate_plan_payload(payload, *, question, columns, numeric_columns, datet
 
     metric = payload.get("metric")
     if metric is not None:
+        if not isinstance(metric, str) or not metric:
+            raise LLMPlanningError("metric must be a non-empty string when provided.")
         if metric not in available:
             raise LLMPlanningError(f"LLM referenced unknown metric: {metric!r}")
         if metric not in numeric:
@@ -78,15 +80,19 @@ def _validate_plan_payload(payload, *, question, columns, numeric_columns, datet
     filter_column = payload.get("filter_column")
     filter_value = payload.get("filter_value")
     if filter_column is not None:
-        if filter_column not in available:
-            raise LLMPlanningError(f"LLM referenced unknown filter column: {filter_column!r}")
         if not isinstance(filter_column, str) or not filter_column:
             raise LLMPlanningError("filter_column must be a non-empty string.")
+        if filter_column not in available:
+            raise LLMPlanningError(f"LLM referenced unknown filter column: {filter_column!r}")
         if filter_value is None or not isinstance(filter_value, (str, int, float, bool)):
             raise LLMPlanningError("filter_value must be a simple scalar when filter_column is provided.")
+    elif filter_value is not None:
+        raise LLMPlanningError("filter_value requires filter_column.")
 
     datetime_column = payload.get("datetime_column")
     if datetime_column is not None:
+        if not isinstance(datetime_column, str) or not datetime_column:
+            raise LLMPlanningError("datetime_column must be a non-empty string when provided.")
         if datetime_column not in available:
             raise LLMPlanningError(f"LLM referenced unknown datetime column: {datetime_column!r}")
         if datetime_column not in datetimes and not (
@@ -97,15 +103,21 @@ def _validate_plan_payload(payload, *, question, columns, numeric_columns, datet
             )
 
     aggregation = payload.get("aggregation")
-    if aggregation is not None and aggregation not in _ALLOWED_AGGREGATIONS:
+    if aggregation is not None and (
+        not isinstance(aggregation, str) or aggregation not in _ALLOWED_AGGREGATIONS
+    ):
         raise LLMPlanningError(f"Unsupported aggregation: {aggregation!r}")
 
     frequency = payload.get("frequency")
-    if frequency is not None and frequency not in _ALLOWED_FREQUENCIES:
+    if frequency is not None and (
+        not isinstance(frequency, str) or frequency not in _ALLOWED_FREQUENCIES
+    ):
         raise LLMPlanningError(f"Unsupported frequency: {frequency!r}")
 
     sort_direction = payload.get("sort_direction")
-    if sort_direction is not None and sort_direction not in _ALLOWED_SORTS:
+    if sort_direction is not None and (
+        not isinstance(sort_direction, str) or sort_direction not in _ALLOWED_SORTS
+    ):
         raise LLMPlanningError(f"Unsupported sort direction: {sort_direction!r}")
 
     limit = payload.get("limit")
