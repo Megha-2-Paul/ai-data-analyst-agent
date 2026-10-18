@@ -66,3 +66,36 @@ def test_duplicate_rows_are_recommendation_not_automatic_cleaning():
 
     assert not any(step.operation == "drop_duplicates" for step in plan.steps)
     assert any("duplicate" in item.lower() for item in plan.recommendations)
+
+def test_blank_only_string_column_is_dropped_after_blank_normalization():
+    df = pl.DataFrame(
+        {
+            "all blank": [" ", "", "   "],
+            "keep me": ["alpha", " ", "beta"],
+        }
+    )
+
+    result = apply_cleaning_plan(df, build_cleaning_plan(df))
+
+    assert result.dataframe.columns == ["keep_me"]
+    assert result.dataframe["keep_me"].to_list() == ["alpha", None, "beta"]
+    drop_steps = [
+        step for step in result.applied_steps
+        if step["operation"] == "drop_empty_columns"
+    ]
+    assert drop_steps and drop_steps[0]["columns"] == ["all_blank"]
+
+
+def test_null_string_column_is_dropped_but_partially_observed_column_is_kept():
+    df = pl.DataFrame(
+        {
+            "empty": [None, None],
+            "observed": ["value", None],
+        }
+    )
+
+    result = apply_cleaning_plan(df, build_cleaning_plan(df))
+
+    assert result.dataframe.columns == ["observed"]
+    assert result.dataframe["observed"].to_list() == ["value", None]
+
