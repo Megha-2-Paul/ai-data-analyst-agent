@@ -18,6 +18,7 @@ class MLAnalysisError(ValueError):
 
 def _sklearn():
     try:
+        import pandas as pd
         from sklearn.compose import ColumnTransformer
         from sklearn.ensemble import IsolationForest, RandomForestClassifier, RandomForestRegressor
         from sklearn.impute import SimpleImputer
@@ -33,7 +34,7 @@ def _sklearn():
             'Machine-learning features require the optional dependency. Install with: pip install -e ".[ml]"'
         ) from exc
     return {
-        "ColumnTransformer": ColumnTransformer, "IsolationForest": IsolationForest,
+        "pd": pd, "ColumnTransformer": ColumnTransformer, "IsolationForest": IsolationForest,
         "RandomForestClassifier": RandomForestClassifier, "RandomForestRegressor": RandomForestRegressor,
         "SimpleImputer": SimpleImputer, "accuracy_score": accuracy_score, "f1_score": f1_score,
         "mean_absolute_error": mean_absolute_error, "mean_squared_error": mean_squared_error,
@@ -144,12 +145,14 @@ def train_predictive_model(
         y = y_series.cast(pl.String).to_numpy()
         if len(np.unique(y)) < 2:
             raise MLAnalysisError("Classification requires at least two target classes.")
-    X = subset.select(feature_list).to_pandas()
+    X = lib["pd"].DataFrame(subset.select(feature_list).to_dict(as_series=False))
     # Convert dates to stable numeric timestamps rather than silently treating them as categories.
     for name in feature_list:
         if X[name].dtype.kind == "M":
             X[name] = X[name].astype("int64") / 1_000_000_000
     numeric = [name for name in feature_list if X[name].dtype.kind in "biuf"]
+    for name in numeric:
+        X[name] = X[name].replace([np.inf, -np.inf], np.nan)
     categorical = [name for name in feature_list if name not in numeric]
     transformers = []
     if numeric:
