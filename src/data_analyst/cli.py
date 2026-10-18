@@ -153,6 +153,7 @@ def main() -> None:
         return
 
     if args.command == "ml-predict":
+        from .answer import generate_answer
         from .ml import train_predictive_model
         result = train_predictive_model(
             df,
@@ -161,6 +162,7 @@ def main() -> None:
             task=args.task,
             test_size=args.test_size,
         )
+        result["answer"] = generate_answer(result).to_dict()
         print(json.dumps(result, indent=2, default=str, allow_nan=False))
         return
 
