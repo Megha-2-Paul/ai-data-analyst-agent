@@ -1,3 +1,5 @@
+import json
+
 import polars as pl
 import pytest
 
@@ -181,3 +183,14 @@ def test_top_n_ranking_does_not_select_null_aggregate(direction, expected):
 
     assert [row["group"] for row in result["result"]] == expected
 
+
+
+
+def test_agent_response_is_strictly_json_serializable_with_datetime_results():
+    response = AnalystAgent().ask(
+        "Show the daily trend of average fare_amount over pickup_datetime",
+        make_df(),
+    )
+
+    serialized = json.dumps(response.to_dict(), allow_nan=False)
+    assert "2025-01-01" in serialized
