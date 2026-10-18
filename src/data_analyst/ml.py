@@ -246,6 +246,7 @@ def forecast_time_series(
     series_frame = df.select([datetime_column, target]).drop_nulls().sort(datetime_column)
     raw_values = series_frame.get_column(target).cast(pl.Float64).to_numpy()
     finite = np.isfinite(raw_values)
+    series_frame = series_frame.filter(pl.Series(finite))
     raw_values = raw_values[finite]
     if len(raw_values) < max(20, n_lags + 12):
         raise MLAnalysisError(f"Forecasting requires at least {max(20, n_lags + 12)} finite observations.")
