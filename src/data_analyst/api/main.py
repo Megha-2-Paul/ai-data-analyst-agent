@@ -20,6 +20,7 @@ from sqlalchemy.orm import Session
 
 from data_analyst.agent import AnalystAgent
 from data_analyst.ingestion import load_dataset
+from data_analyst.ml import MLAnalysisError, train_predictive_model
 from data_analyst.llm_planner import LLMPlanningError, OpenAIPlanner
 from data_analyst.planner import PlanningError, plan_query
 from data_analyst.preparation import prepare_dataset
@@ -29,7 +30,7 @@ from data_analyst.providers import GeminiPlanner, GroqPlanner
 
 from .database import Base, make_engine, make_session_factory
 from .models import AnalysisRun, Dataset, Report, UsageEvent, User, Workspace, WorkspaceMember
-from .schemas import (AnalysisRequest, DatasetResponse, LoginRequest, RegisterRequest, ReportResponse, TokenResponse, UserResponse, WorkspaceCreate, WorkspaceMemberCreate, WorkspaceMemberResponse, WorkspaceResponse)
+from .schemas import (AnalysisRequest, DatasetResponse, LoginRequest, MLModelRequest, RegisterRequest, ReportResponse, TokenResponse, UserResponse, WorkspaceCreate, WorkspaceMemberCreate, WorkspaceMemberResponse, WorkspaceResponse)
 from .security import create_access_token, decode_access_token, hash_password, verify_password
 from .storage import resolve_storage_key, save_and_inspect, storage_root
 
@@ -394,6 +395,49 @@ def create_app(
         db.commit()
         db.refresh(run)
         return {"id": run.id, "workspace_id": d.workspace_id, "dataset_id": d.id, "status": run.status, "created_at": run.created_at, "response": result}
+
+    @app.post(f"{API_PREFIX}/datasets/{'{'}dataset_id{'}'}/ml-models", status_code=201)
+    def create_ml_model_evaluation(
+        dataset_id: int, payload: MLModelRequest,
+        db: Session = Depends(get_db), user: User = Depends(current_user),
+    ):
+        dataset = owned_dataset(db, user, dataset_id)
+        max_daily = max(1, int(os.getenv("MAX_DAILY_ANALYSES", "100")))
+        since = datetime.now(timezone.utc) - timedelta(days=1)
+        count = db.scalar(select(func.count(UsageEvent.id)).where(
+            UsageEvent.user_id == user.id, UsageEvent.action == "analysis",
+            UsageEvent.created_at >= since,
+        )) or 0
+        if count >= max_daily:
+            raise HTTPException(status_code=429, detail="Daily analysis limit reached.")
+        frame = dataset_frame(dataset)
+        try:
+            result = train_predictive_model(
+                frame, target=payload.target, features=payload.features,
+                task=payload.task, test_size=payload.test_size,
+            )
+        except RuntimeError as exc:
+            raise HTTPException(status_code=503, detail=str(exc))
+        except MLAnalysisError as exc:
+            raise HTTPException(status_code=422, detail=str(exc))
+        question = (
+            f"ML {payload.task} evaluation; target={payload.target}; "
+            f"features={', '.join(payload.features)}"
+        )
+        run = AnalysisRun(
+            owner_id=user.id, workspace_id=dataset.workspace_id, dataset_id=dataset.id,
+            question=question, planner=f"ml_{payload.task}", status="succeeded",
+            response_json=result,
+        )
+        db.add(run)
+        db.flush()
+        record_usage(db, user.id, "analysis", "analysis", run.id)
+        db.commit()
+        db.refresh(run)
+        return {
+            "id": run.id, "workspace_id": dataset.workspace_id, "dataset_id": dataset.id,
+            "status": run.status, "created_at": run.created_at, "response": result,
+        }
 
     @app.get(f"{API_PREFIX}/analyses")
     def list_analyses(
