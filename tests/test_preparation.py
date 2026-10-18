@@ -1,3 +1,5 @@
+import json
+
 import polars as pl
 
 from data_analyst.preparation import prepare_dataset
@@ -32,3 +34,19 @@ def test_prepare_dataset_does_not_impute_or_remove_outliers():
     assert result.dataframe["value"].null_count() == 1
     assert result.dataframe["value"].to_list()[-2] == 1000.0
     assert any("outlier" in item.lower() for item in result.cleaning.recommendations)
+
+
+
+def test_preparation_report_is_strictly_json_serializable():
+    result = prepare_dataset(
+        pl.DataFrame(
+            {
+                "order_date": ["2025-01-01", "2025-01-02"],
+                "value": [1.0, None],
+            }
+        )
+    )
+
+    serialized = json.dumps(result.to_dict(), allow_nan=False)
+    assert "original_profile" in serialized
+    assert "prepared_quality" in serialized
