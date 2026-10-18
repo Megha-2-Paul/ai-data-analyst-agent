@@ -210,3 +210,97 @@ def train_predictive_model(
             ],
         },
     }
+
+
+
+def forecast_time_series(
+    df: pl.DataFrame,
+    *,
+    datetime_column: str,
+    target: str,
+    horizon: int = 1,
+    test_size: float = 0.2,
+    n_lags: int = 3,
+    random_state: int = 42,
+) -> dict[str, Any]:
+    """Forecast a numeric series with lag features and a chronological holdout.
+
+    This is a baseline forecast, not a causal model. The final observations are
+    reserved for evaluation; random shuffling is deliberately not used.
+    """
+    lib = _sklearn()
+    if datetime_column not in df.columns or target not in df.columns:
+        missing = [name for name in (datetime_column, target) if name not in df.columns]
+        raise MLAnalysisError(f"Unknown column(s): {', '.join(missing)}.")
+    dtype = df.schema[datetime_column]
+    if dtype not in (pl.Date, pl.Datetime, pl.Int8, pl.Int16, pl.Int32, pl.Int64, pl.UInt8, pl.UInt16, pl.UInt32, pl.UInt64):
+        raise MLAnalysisError("Forecasting requires a Date/Datetime column or an integer year column.")
+    if not df.schema[target].is_numeric():
+        raise MLAnalysisError("Forecasting requires a numeric target column.")
+    if not 1 <= horizon <= 24:
+        raise MLAnalysisError("horizon must be between 1 and 24 steps.")
+    if not 0.1 <= test_size <= 0.4:
+        raise MLAnalysisError("test_size must be between 0.1 and 0.4.")
+    if not 1 <= n_lags <= 12:
+        raise MLAnalysisError("n_lags must be between 1 and 12.")
+    series_frame = df.select([datetime_column, target]).drop_nulls().sort(datetime_column)
+    raw_values = series_frame.get_column(target).cast(pl.Float64).to_numpy()
+    finite = np.isfinite(raw_values)
+    raw_values = raw_values[finite]
+    if len(raw_values) < max(20, n_lags + 12):
+        raise MLAnalysisError(f"Forecasting requires at least {max(20, n_lags + 12)} finite observations.")
+    X = np.asarray([
+        [*raw_values[index - lag] for lag in range(1, n_lags + 1)]
+        for index in range(n_lags, len(raw_values))
+    ], dtype=float)
+    # A monotonic time index helps the model distinguish recurring lag values
+    # at different points in the series without assuming a date frequency.
+    time_index = np.arange(n_lags, len(raw_values), dtype=float).reshape(-1, 1)
+    X = np.hstack([X, time_index])
+    y = raw_values[n_lags:]
+    test_count = max(2, int(np.ceil(len(y) * test_size)))
+    train_count = len(y) - test_count
+    if train_count < 10:
+        raise MLAnalysisError("Not enough training observations after reserving the chronological test window.")
+    X_train, X_test = X[:train_count], X[train_count:]
+    y_train, y_test = y[:train_count], y[train_count:]
+    model = lib["RandomForestRegressor"](n_estimators=200, random_state=random_state, n_jobs=1)
+    model.fit(X_train, y_train)
+    predictions = model.predict(X_test)
+    naive_predictions = X_test[:, 0]
+    metrics = {
+        "mae": float(lib["mean_absolute_error"](y_test, predictions)),
+        "rmse": float(np.sqrt(lib["mean_squared_error"](y_test, predictions))),
+        "naive_mae": float(lib["mean_absolute_error"](y_test, naive_predictions)),
+        "naive_rmse": float(np.sqrt(lib["mean_squared_error"](y_test, naive_predictions))),
+        "r2": float(lib["r2_score"](y_test, predictions)) if len(y_test) > 1 else None,
+    }
+    history = list(raw_values)
+    future = []
+    for step in range(1, horizon + 1):
+        features = [history[-lag] for lag in range(1, n_lags + 1)] + [float(len(history))]
+        prediction = float(model.predict(np.asarray(features, dtype=float).reshape(1, -1))[0])
+        future.append({"step_ahead": step, "predicted_value": prediction})
+        history.append(prediction)
+    return {
+        "analysis": "time_series_forecast",
+        "method": "RandomForestRegressor",
+        "parameters": {
+            "datetime_column": datetime_column, "target": target, "horizon": horizon,
+            "test_size": test_size, "n_lags": n_lags, "random_state": random_state,
+        },
+        "result": {
+            "metrics": metrics, "train_rows": int(train_count), "test_rows": int(test_count),
+            "future_forecast": future,
+        },
+        "metadata": {
+            "observations_used": int(len(raw_values)),
+            "last_observed_time": str(series_frame.get_column(datetime_column)[-1]),
+            "evaluation": "chronological holdout; final observations were not used for fitting",
+            "limitations": [
+                "Forecast steps are relative to the last observation; no calendar frequency is inferred.",
+                "Compare model MAE/RMSE with the naive baseline before using the forecast.",
+                "Forecasts are extrapolations, not causal explanations or guarantees.",
+            ],
+        },
+    }
