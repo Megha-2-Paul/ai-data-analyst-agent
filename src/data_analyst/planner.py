@@ -200,11 +200,11 @@ def plan_query(
         ]
         country_columns = [c for c in non_numeric if _normalize(c) in ("country", "country name")]
         if country_columns:
-            match = re.search(r"\\b([A-Za-z][A-Za-z ._-]{0,60})'s\\s+", question)
+            match = re.search(r"\b([A-Za-z][A-Za-z ._-]{0,60})'s\s+", question)
             if match:
                 candidate = match.group(1).strip()
                 candidate = re.sub(
-                    r"^(?:how|what|when|where|why|did|does|has|have|is|was|were)\\s+",
+                    r"^(?:how|what|when|where|why|did|does|has|have|is|was|were)\s+",
                     "",
                     candidate,
                     flags=re.IGNORECASE,
