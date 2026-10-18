@@ -78,6 +78,14 @@ def main() -> None:
         default="count",
     )
 
+    ml_forecast = subparsers.add_parser("ml-forecast", help="Forecast a time series with chronological holdout evaluation.")
+    ml_forecast.add_argument("path", type=Path)
+    ml_forecast.add_argument("--datetime-column", required=True)
+    ml_forecast.add_argument("--target", required=True)
+    ml_forecast.add_argument("--horizon", type=int, default=1)
+    ml_forecast.add_argument("--test-size", type=float, default=0.2)
+    ml_forecast.add_argument("--n-lags", type=int, default=3)
+
     ml_predict = subparsers.add_parser("ml-predict", help="Train and evaluate an optional baseline ML model.")
     ml_predict.add_argument("path", type=Path)
     ml_predict.add_argument("--target", required=True)
@@ -150,6 +158,21 @@ def main() -> None:
             return
 
         print(json.dumps(result, indent=2, default=str))
+        return
+
+    if args.command == "ml-forecast":
+        from .answer import generate_answer
+        from .ml import forecast_time_series
+        result = forecast_time_series(
+            df,
+            datetime_column=args.datetime_column,
+            target=args.target,
+            horizon=args.horizon,
+            test_size=args.test_size,
+            n_lags=args.n_lags,
+        )
+        result["answer"] = generate_answer(result).to_dict()
+        print(json.dumps(result, indent=2, default=str, allow_nan=False))
         return
 
     if args.command == "ml-predict":
