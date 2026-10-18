@@ -115,6 +115,7 @@ def _execute_plan(df: pl.DataFrame, plan: QueryPlan) -> Any:
                 reverse=plan.sort_direction == "desc",
             )
             rows = non_null_rows + null_rows
+            result["result"] = rows
             if plan.limit:
                 result["result"] = rows[: plan.limit]
         return result
