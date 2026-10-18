@@ -18,12 +18,14 @@ External datasets are not committed to this repository. See [data source guidanc
 
 - CSV and Parquet ingestion and schema scanning
 - Dataset profiling and data-quality checks
-- Descriptive statistics, grouped aggregation, correlation, and time-series analysis
+- Descriptive statistics with quartiles, IQR, variance, zero/negative counts, and missingness rates
+- Global and grouped aggregations, multi-column grouping, explicit exact-match filters, ranking, percentage-of-total calculations, correlation, and time-series analysis
 - Deterministic natural-language query planning and validation
 - Optional OpenAI-backed planning at the planner boundary
 - Multi-step analytical reasoning with dependency-aware execution
 - Structured execution traces and evidence-backed answers
 - Optional safe data preparation with a transformation trace
+- Optional scikit-learn module for Isolation Forest anomaly detection and evaluated regression/classification baselines
 - Command-line interface and automated tests
 - FastAPI endpoints for authentication, dataset upload, analysis, reports, and usage
 - PostgreSQL persistence with Alembic migrations, workspace membership and resource isolation
@@ -75,6 +77,31 @@ Supported complex questions can be decomposed into a validated dependency graph.
 The agent turns structured analytical results into deterministic, evidence-backed answers. Findings reference evidence IDs drawn from results produced by the analytical engine; unsupported result types are identified rather than guessed.
 
 The structured answer includes a concise summary, findings with evidence references, evidence items with source step IDs and values, and limitations when results are insufficient or unsupported. Use `--json` with `ask` to inspect the complete response.
+
+## Stronger analytics and optional machine learning
+
+The deterministic analytical engine supports global and grouped aggregations, multi-column grouping, explicit filters such as `where status is active`, ranking, percentage-of-total calculations, correlation, time-series aggregation, and richer descriptive statistics. Unsupported or ambiguous requests should be clarified rather than guessed.
+
+Machine learning is optional and is not used for ordinary sums, averages, counts, or rankings. Install it separately:
+
+~~~bash
+pip install -e ".[ml]"
+~~~
+
+Find unusual rows using the existing natural-language interface:
+
+~~~bash
+data-analyst ask data.csv "Find outliers in sales" --json
+~~~
+
+Train and evaluate a baseline supervised model using an explicit target and feature list:
+
+~~~bash
+data-analyst ml-predict data.csv --target sales --features price units region --task regression
+data-analyst ml-predict data.csv --target churned --features tenure monthly_spend plan --task classification
+~~~
+
+The predictive command uses a held-out train/test split and reports regression or classification metrics. The result includes row counts and limitations; it is a baseline, not a guarantee of future performance. Check for target leakage, representative data, appropriate features, and a suitable evaluation strategy before using a model for decisions. Anomaly detection identifies unusual patterns, not necessarily errors or fraud. The optional ML dependency is installed in CI so the ML path is exercised by the test suite.
 
 ## Stage 4 — Data Preparation
 
@@ -154,6 +181,7 @@ This repository is developed incrementally. Review the [Development Workflow](do
 - **Stage 2 — Multi-step analytical reasoning:** implemented
 - **Stage 3 — Evidence-backed answers:** implemented
 - **Stage 4 — Data preparation:** implemented on `stage-4-data-preparation`; not merged into `main`
+- **Enhanced analytics and optional ML:** implemented on `stage-4-data-preparation`; CI verification pending
 - **Groq and Gemini providers:** optional adapters with offline tests and opt-in live smoke tests
 - **Backend API:** implemented on `stage-4-data-preparation`; requires database migration and secure environment configuration before use
 
