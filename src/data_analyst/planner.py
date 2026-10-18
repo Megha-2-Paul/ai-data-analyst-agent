@@ -346,13 +346,22 @@ def plan_query(
         # Exclude temporal columns from grouping candidates, but allow numeric
         # grouping dimensions such as payment_type. Select the metric only after
         # resolving the grouping column so multiple metrics cannot be guessed.
-        selected_metric = mentioned_numeric[0] if mentioned_numeric else None
+        # Resolve the grouping dimension before selecting a metric. In ranking
+        # questions, the group often appears in a "which <column> has ..." clause
+        # rather than a "by/per" clause, and that column may itself be numeric.
         group_candidates = [
-            column for column in columns
-            if column != selected_metric and column not in mentioned_datetime
+            column for column in columns if column not in mentioned_datetime
         ]
 
         group_matches = _group_columns(question, group_candidates) if grouped_intent else []
+        if not group_matches:
+            which_match = re.search(
+                r"\\bwhich\\s+(.+?)\\s+(?:has|have|is|was|were)\\b",
+                question,
+                flags=re.IGNORECASE,
+            )
+            if which_match:
+                group_matches = _find_columns(which_match.group(1), group_candidates)
         if not group_matches:
             grouping_pattern = re.compile(
                 r"\b(?:by|per|each)\s+(.+?)(?=\s+(?:and|with|over|for)\b|[?,.]|$)",
@@ -384,7 +393,12 @@ def plan_query(
             metric=selected_metric,
             aggregation=aggregation,
             sort_direction=_detect_sort(question),
-            limit=_detect_limit(question),
+            limit=(
+                _detect_limit(question)
+                if _detect_limit(question) is not None
+                else 1 if ranking_intent and re.search(r"\\bwhich\\b", text)
+                else None
+            ),
             question=question,
         )
 
