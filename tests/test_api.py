@@ -125,3 +125,35 @@ def test_provider_without_key_returns_controlled_service_error(tmp_path, monkeyp
             json={"question": "What is the average revenue by category?", "planner": "groq"},
         )
         assert response.status_code == 503
+
+def test_daily_analysis_quota_is_enforced(tmp_path, monkeypatch):
+    monkeypatch.setenv("MAX_DAILY_ANALYSES", "1")
+    with client_for(tmp_path) as client:
+        headers = register(client, "quota@example.com")
+        dataset = upload_csv(client, headers).json()
+        route = f"/api/v1/datasets/{dataset['id']}/analyses"
+        payload = {"question": "What is the average revenue by category?", "planner": "deterministic"}
+        assert client.post(route, headers=headers, json=payload).status_code == 201
+        limited = client.post(route, headers=headers, json=payload)
+        assert limited.status_code == 429
+
+
+def test_provider_runtime_failure_is_reported_as_service_unavailable(tmp_path, monkeypatch):
+    from data_analyst.llm_planner import LLMPlanningError
+    import data_analyst.api.main as api_main
+
+    monkeypatch.setenv("GROQ_API_KEY", "test-key")
+
+    def unavailable(*args, **kwargs):
+        raise LLMPlanningError("Groq planning request failed (TimeoutError).")
+
+    monkeypatch.setattr(api_main, "GroqPlanner", lambda: unavailable)
+    with client_for(tmp_path) as client:
+        headers = register(client, "provider-error@example.com")
+        dataset = upload_csv(client, headers).json()
+        response = client.post(
+            f"/api/v1/datasets/{dataset['id']}/analyses",
+            headers=headers,
+            json={"question": "What is the average revenue by category?", "planner": "groq"},
+        )
+        assert response.status_code == 503

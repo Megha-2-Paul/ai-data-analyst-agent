@@ -9,7 +9,7 @@ The FastAPI backend wraps the existing analytical engine. It never executes mode
 3. Copy `.env.example` to `.env`; set a unique `APP_SECRET_KEY` and a database URL.
 4. Configure PostgreSQL, or use SQLite for a local-only trial.
 5. Run `alembic upgrade head`.
-6. Start with `uvicorn data_analyst.api.main:app --reload`.
+6. Start with `uvicorn data_analyst.api.main:app --env-file .env --reload`.
 7. Open `http://127.0.0.1:8000/docs` for interactive OpenAPI docs.
 
 For Docker, configure `.env` and run `docker compose up --build`. The compose service runs migrations before starting the API.
