@@ -113,6 +113,20 @@ def _single_step_evidence(result: dict[str, Any], source: str = "step_1") -> tup
         group_columns = parameters.get("group_by", [])
         if not rows:
             return [], [], "No results were returned for the requested aggregation.", ["The analytical result contained no rows."]
+        if not group_columns and rows:
+            metric_label = metric or "row_count"
+            value = rows[0].get(metric_label)
+            if value is not None:
+                aggregation = parameters.get("aggregation", "calculated")
+                eid = _add(
+                    evidence, source, "global_aggregation",
+                    f"{aggregation} of {metric_label}",
+                    metric=metric_label, aggregation=aggregation, value=value,
+                )
+                finding_text = f"The {aggregation} of {metric_label} is {_fmt(value)}."
+                findings.append(Finding("f1", finding_text, [eid]))
+                return evidence, findings, finding_text, limitations
+            return [], [], "The global aggregation completed.", ["No non-null result was returned."]
         if not metric or not group_columns:
             return [], [], "The grouped analysis completed.", ["The grouped result did not include a metric and grouping column."]
         
