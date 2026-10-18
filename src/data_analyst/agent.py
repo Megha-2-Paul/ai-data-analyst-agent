@@ -106,7 +106,6 @@ def _execute_plan(df: pl.DataFrame, plan: QueryPlan) -> Any:
                     )
                 if plan.limit:
                     result["parameters"]["limit"] = plan.limit
-                    result["result"] = result["result"][: plan.limit]
                 if plan.percentage_of_total:
                     denominator = sum(float(row["count"]) for row in result["result"])
                     for row in result["result"]:
@@ -116,6 +115,8 @@ def _execute_plan(df: pl.DataFrame, plan: QueryPlan) -> Any:
                     result["parameters"]["percentage_of_total"] = True
                     result["metadata"]["percentage_basis"] = "count"
                     result["metadata"]["percentage_denominator"] = denominator
+                if plan.limit:
+                    result["result"] = result["result"][: plan.limit]
                 return result
             raise AgentExecutionError("Aggregate plan is missing metric.")
         result = aggregate(
@@ -141,8 +142,6 @@ def _execute_plan(df: pl.DataFrame, plan: QueryPlan) -> Any:
             )
             rows = non_null_rows + null_rows
             result["result"] = rows
-            if plan.limit:
-                result["result"] = rows[: plan.limit]
         if plan.percentage_of_total and plan.group_by and isinstance(result.get("result"), list):
             value_key = plan.metric or "row_count"
             rows = result["result"]
@@ -158,6 +157,8 @@ def _execute_plan(df: pl.DataFrame, plan: QueryPlan) -> Any:
             result["parameters"]["percentage_of_total"] = True
             result["metadata"]["percentage_basis"] = value_key
             result["metadata"]["percentage_denominator"] = denominator
+        if plan.limit and isinstance(result.get("result"), list):
+            result["result"] = result["result"][: plan.limit]
         return result
     raise AgentExecutionError(f"Unsupported operation: {plan.operation}")
 
