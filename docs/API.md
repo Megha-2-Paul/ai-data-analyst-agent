@@ -22,6 +22,7 @@ Register with `POST /api/v1/auth/register`, then log in with `POST /api/v1/auth/
 
 - `GET /health` — process liveness; `GET /ready` — database readiness.
 - `POST /api/v1/auth/register`, `POST /api/v1/auth/login`, `GET /api/v1/auth/me`.
+- `GET /api/v1/workspaces`, `POST /api/v1/workspaces`, `GET /api/v1/workspaces/{id}/members`, `POST /api/v1/workspaces/{id}/members`.
 - `POST /api/v1/datasets` — multipart CSV/Parquet upload.
 - `GET /api/v1/datasets`, `GET /api/v1/datasets/{id}`, `DELETE /api/v1/datasets/{id}`.
 - `GET /api/v1/datasets/{id}/profile`, `GET /api/v1/datasets/{id}/quality`, `POST /api/v1/datasets/{id}/prepare`.
@@ -34,6 +35,6 @@ The planner field accepts `deterministic`, `groq`, `gemini`, or `openai`. Provid
 
 ## Limits and security
 
-The default upload limit is 25 MiB (`MAX_UPLOAD_BYTES`) and the default analysis limit is 100 runs per user per rolling 24 hours (`MAX_DAILY_ANALYSES`). Dataset files use random storage keys, are not served as static files, and are only opened after ownership checks. API errors do not disclose filesystem paths or database details.
+The default upload limit is 25 MiB (`MAX_UPLOAD_BYTES`) and the default analysis limit is 100 runs per user per rolling 24 hours (`MAX_DAILY_ANALYSES`). New users receive a personal workspace. Workspace owners can add already-registered users; members can collaborate on datasets, analyses and reports within that workspace. Only the uploader or workspace owner can delete a dataset. Dataset files use random storage keys, are not served as static files, and are only opened after workspace membership checks. API errors do not disclose filesystem paths or database details.
 
 Before public deployment, configure HTTPS, a strong secret, backups, restricted network access, storage quotas/retention, database credentials, monitoring and a privacy policy. This initial API processes analysis synchronously and uses local file storage; very large or long-running workloads may need background workers and object storage.

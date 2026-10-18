@@ -26,9 +26,10 @@ def register(client, email):
     return {"Authorization": f"Bearer {token}"}
 
 
-def upload_csv(client, headers, name="sales.csv"):
+def upload_csv(client, headers, name="sales.csv", workspace_id=None):
+    data = {"workspace_id": str(workspace_id)} if workspace_id is not None else None
     return client.post(
-        "/api/v1/datasets", headers=headers,
+        "/api/v1/datasets", headers=headers, data=data,
         files={"file": (name, b"category,revenue\na,10\nb,20\na,30\n", "text/csv")},
     )
 
@@ -157,3 +158,37 @@ def test_provider_runtime_failure_is_reported_as_service_unavailable(tmp_path, m
             json={"question": "What is the average revenue by category?", "planner": "groq"},
         )
         assert response.status_code == 503
+
+def test_workspace_members_can_collaborate_but_only_owners_can_delete_datasets(tmp_path):
+    with client_for(tmp_path) as client:
+        owner_headers = register(client, "workspace-owner@example.com")
+        member_headers = register(client, "workspace-member@example.com")
+        workspace = client.post(
+            "/api/v1/workspaces", headers=owner_headers, json={"name": "Research team"}
+        )
+        assert workspace.status_code == 201, workspace.text
+        workspace_id = workspace.json()["id"]
+        added = client.post(
+            f"/api/v1/workspaces/{workspace_id}/members",
+            headers=owner_headers, json={"email": "workspace-member@example.com"},
+        )
+        assert added.status_code == 201, added.text
+        assert added.json()["role"] == "member"
+
+        upload = upload_csv(client, owner_headers, workspace_id=workspace_id)
+        assert upload.status_code == 201, upload.text
+        dataset_id = upload.json()["id"]
+        assert upload.json()["workspace_id"] == workspace_id
+        assert client.get(f"/api/v1/datasets/{dataset_id}", headers=member_headers).status_code == 200
+
+        analysis = client.post(
+            f"/api/v1/datasets/{dataset_id}/analyses", headers=member_headers,
+            json={"question": "What is the average revenue by category?", "planner": "deterministic"},
+        )
+        assert analysis.status_code == 201, analysis.text
+        analysis_id = analysis.json()["id"]
+        report = client.post(f"/api/v1/analyses/{analysis_id}/report", headers=member_headers)
+        assert report.status_code == 201, report.text
+        report_id = report.json()["id"]
+        assert client.get(f"/api/v1/reports/{report_id}", headers=owner_headers).status_code == 200
+        assert client.delete(f"/api/v1/datasets/{dataset_id}", headers=member_headers).status_code == 403

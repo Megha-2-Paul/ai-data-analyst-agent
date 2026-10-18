@@ -20,7 +20,7 @@ def test_initial_migration_creates_expected_tables(tmp_path, monkeypatch):
     engine = create_engine(f"sqlite:///{database_path}")
     try:
         tables = set(inspect(engine).get_table_names())
-        assert {"users", "datasets", "analysis_runs", "reports", "usage_events", "alembic_version"} <= tables
+        assert {"users", "workspaces", "workspace_members", "datasets", "analysis_runs", "reports", "usage_events", "alembic_version"} <= tables
     finally:
         engine.dispose()
 

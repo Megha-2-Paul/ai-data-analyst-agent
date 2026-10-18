@@ -40,8 +40,41 @@ class TokenResponse(BaseModel):
     expires_in: int = 3600
 
 
+class WorkspaceCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=100)
+
+    @field_validator("name")
+    @classmethod
+    def workspace_name_not_blank(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("Workspace name cannot be blank.")
+        return value.strip()
+
+
+class WorkspaceResponse(BaseModel):
+    id: int
+    name: str
+    role: str
+    created_at: datetime
+
+
+class WorkspaceMemberCreate(BaseModel):
+    email: str = Field(min_length=5, max_length=320)
+
+    @field_validator("email")
+    @classmethod
+    def normalize_email(cls, value: str) -> str:
+        return value.strip().lower()
+
+
+class WorkspaceMemberResponse(BaseModel):
+    email: str
+    role: str
+
+
 class DatasetResponse(BaseModel):
     id: int
+    workspace_id: int
     original_filename: str
     format: str
     size_bytes: int
@@ -73,6 +106,7 @@ class AnalysisRequest(BaseModel):
 
 class ReportResponse(BaseModel):
     id: int
+    workspace_id: int
     dataset_id: int
     analysis_id: int
     title: str

@@ -11,7 +11,7 @@ from typing import Generator
 
 import jwt
 import polars as pl
-from fastapi import Depends, FastAPI, File, HTTPException, Request, UploadFile
+from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import Response
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import func, select, text
@@ -28,8 +28,8 @@ from data_analyst.quality import quality_report
 from data_analyst.providers import GeminiPlanner, GroqPlanner
 
 from .database import Base, make_engine, make_session_factory
-from .models import AnalysisRun, Dataset, Report, UsageEvent, User
-from .schemas import AnalysisRequest, DatasetResponse, LoginRequest, RegisterRequest, ReportResponse, TokenResponse, UserResponse
+from .models import AnalysisRun, Dataset, Report, UsageEvent, User, Workspace, WorkspaceMember
+from .schemas import (AnalysisRequest, DatasetResponse, LoginRequest, RegisterRequest, ReportResponse, TokenResponse, UserResponse, WorkspaceCreate, WorkspaceMemberCreate, WorkspaceMemberResponse, WorkspaceResponse)
 from .security import create_access_token, decode_access_token, hash_password, verify_password
 from .storage import resolve_storage_key, save_and_inspect, storage_root
 
@@ -98,8 +98,21 @@ def create_app(
             raise HTTPException(status_code=401, detail="Invalid or expired access token.", headers={"WWW-Authenticate": "Bearer"})
         return user
 
+    def user_workspace_ids(db: Session, user_id: int) -> list[int]:
+        return list(db.scalars(
+            select(WorkspaceMember.workspace_id).where(WorkspaceMember.user_id == user_id)
+            .order_by(WorkspaceMember.workspace_id)
+        ).all())
+
+    def workspace_role(db: Session, workspace_id: int, user_id: int) -> str | None:
+        membership = db.get(WorkspaceMember, (workspace_id, user_id))
+        return membership.role if membership else None
+
     def owned_dataset(db: Session, user: User, dataset_id: int) -> Dataset:
-        dataset = db.scalar(select(Dataset).where(Dataset.id == dataset_id, Dataset.owner_id == user.id))
+        workspace_ids = user_workspace_ids(db, user.id)
+        dataset = db.scalar(select(Dataset).where(
+            Dataset.id == dataset_id, Dataset.workspace_id.in_(workspace_ids)
+        ))
         if dataset is None:
             raise HTTPException(status_code=404, detail="Dataset not found.")
         return dataset
@@ -150,6 +163,11 @@ def create_app(
         user = User(email=payload.email, password_hash=hash_password(payload.password))
         db.add(user)
         try:
+            db.flush()
+            workspace = Workspace(name="Personal", owner_id=user.id)
+            db.add(workspace)
+            db.flush()
+            db.add(WorkspaceMember(workspace_id=workspace.id, user_id=user.id, role="owner"))
             db.commit()
             db.refresh(user)
         except IntegrityError:
@@ -168,9 +186,65 @@ def create_app(
     def me(user: User = Depends(current_user)):
         return user
 
+
+    @app.get(f"{API_PREFIX}/workspaces", response_model=list[WorkspaceResponse])
+    def list_workspaces(db: Session = Depends(get_db), user: User = Depends(current_user)):
+        rows = db.execute(
+            select(Workspace, WorkspaceMember.role)
+            .join(WorkspaceMember, WorkspaceMember.workspace_id == Workspace.id)
+            .where(WorkspaceMember.user_id == user.id)
+            .order_by(Workspace.id)
+        ).all()
+        return [
+            WorkspaceResponse(id=workspace.id, name=workspace.name, role=role, created_at=workspace.created_at)
+            for workspace, role in rows
+        ]
+
+    @app.post(f"{API_PREFIX}/workspaces", response_model=WorkspaceResponse, status_code=201)
+    def create_workspace(payload: WorkspaceCreate, db: Session = Depends(get_db), user: User = Depends(current_user)):
+        workspace = Workspace(name=payload.name, owner_id=user.id)
+        db.add(workspace)
+        db.flush()
+        db.add(WorkspaceMember(workspace_id=workspace.id, user_id=user.id, role="owner"))
+        db.commit()
+        db.refresh(workspace)
+        return WorkspaceResponse(id=workspace.id, name=workspace.name, role="owner", created_at=workspace.created_at)
+
+    @app.get(f"{API_PREFIX}/workspaces/{{workspace_id}}/members", response_model=list[WorkspaceMemberResponse])
+    def list_workspace_members(workspace_id: int, db: Session = Depends(get_db), user: User = Depends(current_user)):
+        if workspace_role(db, workspace_id, user.id) is None:
+            raise HTTPException(status_code=404, detail="Workspace not found.")
+        rows = db.execute(
+            select(User.email, WorkspaceMember.role)
+            .join(WorkspaceMember, WorkspaceMember.user_id == User.id)
+            .where(WorkspaceMember.workspace_id == workspace_id)
+            .order_by(User.email)
+        ).all()
+        return [WorkspaceMemberResponse(email=email, role=role) for email, role in rows]
+
+    @app.post(f"{API_PREFIX}/workspaces/{{workspace_id}}/members", response_model=WorkspaceMemberResponse, status_code=201)
+    def add_workspace_member(
+        workspace_id: int, payload: WorkspaceMemberCreate,
+        db: Session = Depends(get_db), user: User = Depends(current_user),
+    ):
+        role = workspace_role(db, workspace_id, user.id)
+        if role is None:
+            raise HTTPException(status_code=404, detail="Workspace not found.")
+        if role != "owner":
+            raise HTTPException(status_code=403, detail="Only workspace owners can add members.")
+        target = db.scalar(select(User).where(User.email == payload.email))
+        if target is None:
+            raise HTTPException(status_code=404, detail="Registered user not found.")
+        if db.get(WorkspaceMember, (workspace_id, target.id)) is not None:
+            raise HTTPException(status_code=409, detail="User is already a workspace member.")
+        db.add(WorkspaceMember(workspace_id=workspace_id, user_id=target.id, role="member"))
+        db.commit()
+        return WorkspaceMemberResponse(email=target.email, role="member")
+
     @app.post(f"{API_PREFIX}/datasets", response_model=DatasetResponse, status_code=201)
     async def upload_dataset(
         file: UploadFile = File(...),
+        workspace_id: int | None = Form(default=None),
         db: Session = Depends(get_db),
         user: User = Depends(current_user),
     ):
@@ -195,8 +269,15 @@ def create_app(
                 key, df, _ = save_and_inspect(content, original_name, app.state.storage_dir)
             except ValueError as exc:
                 raise HTTPException(status_code=422, detail=str(exc))
+            workspace_ids = user_workspace_ids(db, user.id)
+            selected_workspace = workspace_id if workspace_id is not None else (workspace_ids[0] if workspace_ids else None)
+            if selected_workspace is None or selected_workspace not in workspace_ids:
+                path = app.state.storage_dir / key
+                path.unlink(missing_ok=True)
+                raise HTTPException(status_code=404, detail="Workspace not found.")
             dataset = Dataset(
-                owner_id=user.id, original_filename=original_name, storage_key=key,
+                owner_id=user.id, workspace_id=selected_workspace,
+                original_filename=original_name, storage_key=key,
                 format=suffix[1:], size_bytes=total, row_count=df.height, columns_json=df.columns,
             )
             db.add(dataset)
@@ -205,7 +286,8 @@ def create_app(
             db.commit()
             db.refresh(dataset)
             return DatasetResponse(
-                id=dataset.id, original_filename=dataset.original_filename, format=dataset.format,
+                id=dataset.id, workspace_id=dataset.workspace_id,
+                original_filename=dataset.original_filename, format=dataset.format,
                 size_bytes=dataset.size_bytes, row_count=dataset.row_count,
                 columns=dataset.columns_json, created_at=dataset.created_at,
             )
@@ -220,10 +302,11 @@ def create_app(
         if limit < 1 or limit > 100 or offset < 0:
             raise HTTPException(status_code=422, detail="limit must be 1–100 and offset must be non-negative.")
         rows = db.scalars(
-            select(Dataset).where(Dataset.owner_id == user.id).order_by(Dataset.id.desc()).offset(offset).limit(limit)
+            select(Dataset).where(Dataset.workspace_id.in_(user_workspace_ids(db, user.id)))
+            .order_by(Dataset.id.desc()).offset(offset).limit(limit)
         ).all()
         return [DatasetResponse(
-            id=d.id, original_filename=d.original_filename, format=d.format,
+            id=d.id, workspace_id=d.workspace_id, original_filename=d.original_filename, format=d.format,
             size_bytes=d.size_bytes, row_count=d.row_count, columns=d.columns_json, created_at=d.created_at,
         ) for d in rows]
 
@@ -231,13 +314,15 @@ def create_app(
     def get_dataset(dataset_id: int, db: Session = Depends(get_db), user: User = Depends(current_user)):
         d = owned_dataset(db, user, dataset_id)
         return DatasetResponse(
-            id=d.id, original_filename=d.original_filename, format=d.format,
+            id=d.id, workspace_id=d.workspace_id, original_filename=d.original_filename, format=d.format,
             size_bytes=d.size_bytes, row_count=d.row_count, columns=d.columns_json, created_at=d.created_at,
         )
 
     @app.delete(f"{API_PREFIX}/datasets/{{dataset_id}}", status_code=204)
     def delete_dataset(dataset_id: int, db: Session = Depends(get_db), user: User = Depends(current_user)):
         d = owned_dataset(db, user, dataset_id)
+        if d.owner_id != user.id and workspace_role(db, d.workspace_id, user.id) != "owner":
+            raise HTTPException(status_code=403, detail="Only the dataset uploader or workspace owner can delete this dataset.")
         path = resolve_storage_key(d.storage_key, app.state.storage_dir)
         path.unlink(missing_ok=True)
         db.delete(d)
@@ -296,7 +381,7 @@ def create_app(
         if prep_payload is not None:
             result["preparation"] = prep_payload
         run = AnalysisRun(
-            owner_id=user.id, dataset_id=d.id, question=payload.question,
+            owner_id=user.id, workspace_id=d.workspace_id, dataset_id=d.id, question=payload.question,
             planner=payload.planner, status="succeeded", response_json=result,
         )
         db.add(run)
@@ -304,7 +389,7 @@ def create_app(
         record_usage(db, user.id, "analysis", "analysis", run.id)
         db.commit()
         db.refresh(run)
-        return {"id": run.id, "dataset_id": d.id, "status": run.status, "created_at": run.created_at, "response": result}
+        return {"id": run.id, "workspace_id": d.workspace_id, "dataset_id": d.id, "status": run.status, "created_at": run.created_at, "response": result}
 
     @app.get(f"{API_PREFIX}/analyses")
     def list_analyses(
@@ -314,32 +399,36 @@ def create_app(
         if limit < 1 or limit > 100 or offset < 0:
             raise HTTPException(status_code=422, detail="limit must be 1–100 and offset must be non-negative.")
         rows = db.scalars(
-            select(AnalysisRun).where(AnalysisRun.owner_id == user.id)
+            select(AnalysisRun).where(AnalysisRun.workspace_id.in_(user_workspace_ids(db, user.id)))
             .order_by(AnalysisRun.id.desc()).offset(offset).limit(limit)
         ).all()
-        return [{"id": r.id, "dataset_id": r.dataset_id, "question": r.question, "planner": r.planner,
+        return [{"id": r.id, "workspace_id": r.workspace_id, "dataset_id": r.dataset_id, "question": r.question, "planner": r.planner,
                  "status": r.status, "created_at": r.created_at} for r in rows]
 
     @app.get(f"{API_PREFIX}/analyses/{{analysis_id}}")
     def get_analysis(analysis_id: int, db: Session = Depends(get_db), user: User = Depends(current_user)):
-        run = db.scalar(select(AnalysisRun).where(AnalysisRun.id == analysis_id, AnalysisRun.owner_id == user.id))
+        run = db.scalar(select(AnalysisRun).where(
+            AnalysisRun.id == analysis_id, AnalysisRun.workspace_id.in_(user_workspace_ids(db, user.id))
+        ))
         if run is None:
             raise HTTPException(status_code=404, detail="Analysis not found.")
-        return {"id": run.id, "dataset_id": run.dataset_id, "question": run.question, "planner": run.planner,
+        return {"id": run.id, "workspace_id": run.workspace_id, "dataset_id": run.dataset_id, "question": run.question, "planner": run.planner,
                 "status": run.status, "created_at": run.created_at, "response": run.response_json}
 
     @app.post(f"{API_PREFIX}/analyses/{{analysis_id}}/report", response_model=ReportResponse, status_code=201)
     def create_report(analysis_id: int, db: Session = Depends(get_db), user: User = Depends(current_user)):
-        run = db.scalar(select(AnalysisRun).where(AnalysisRun.id == analysis_id, AnalysisRun.owner_id == user.id))
+        run = db.scalar(select(AnalysisRun).where(
+            AnalysisRun.id == analysis_id, AnalysisRun.workspace_id.in_(user_workspace_ids(db, user.id))
+        ))
         if run is None:
             raise HTTPException(status_code=404, detail="Analysis not found.")
         payload = {
-            "report_version": 1, "analysis_id": run.id, "dataset_id": run.dataset_id,
+            "report_version": 1, "analysis_id": run.id, "workspace_id": run.workspace_id, "dataset_id": run.dataset_id,
             "question": run.question, "planner": run.planner, "created_at": run.created_at.isoformat(),
             "response": run.response_json,
         }
         report = Report(
-            owner_id=user.id, dataset_id=run.dataset_id, analysis_id=run.id,
+            owner_id=user.id, workspace_id=run.workspace_id, dataset_id=run.dataset_id, analysis_id=run.id,
             title=f"Analysis report #{run.id}", payload_json=payload,
         )
         db.add(report)
@@ -357,20 +446,24 @@ def create_app(
         if limit < 1 or limit > 100 or offset < 0:
             raise HTTPException(status_code=422, detail="limit must be 1–100 and offset must be non-negative.")
         return db.scalars(
-            select(Report).where(Report.owner_id == user.id)
+            select(Report).where(Report.workspace_id.in_(user_workspace_ids(db, user.id)))
             .order_by(Report.id.desc()).offset(offset).limit(limit)
         ).all()
 
     @app.get(f"{API_PREFIX}/reports/{{report_id}}", response_model=ReportResponse)
     def get_report(report_id: int, db: Session = Depends(get_db), user: User = Depends(current_user)):
-        report = db.scalar(select(Report).where(Report.id == report_id, Report.owner_id == user.id))
+        report = db.scalar(select(Report).where(
+            Report.id == report_id, Report.workspace_id.in_(user_workspace_ids(db, user.id))
+        ))
         if report is None:
             raise HTTPException(status_code=404, detail="Report not found.")
         return report
 
     @app.get(f"{API_PREFIX}/reports/{{report_id}}/download")
     def download_report(report_id: int, db: Session = Depends(get_db), user: User = Depends(current_user)):
-        report = db.scalar(select(Report).where(Report.id == report_id, Report.owner_id == user.id))
+        report = db.scalar(select(Report).where(
+            Report.id == report_id, Report.workspace_id.in_(user_workspace_ids(db, user.id))
+        ))
         if report is None:
             raise HTTPException(status_code=404, detail="Report not found.")
         body = json.dumps(report.payload_json, ensure_ascii=False, indent=2, allow_nan=False)

@@ -26,7 +26,7 @@ External datasets are not committed to this repository. See [data source guidanc
 - Optional safe data preparation with a transformation trace
 - Command-line interface and automated tests
 - FastAPI endpoints for authentication, dataset upload, analysis, reports, and usage
-- PostgreSQL persistence with Alembic migrations and per-user resource isolation
+- PostgreSQL persistence with Alembic migrations, workspace membership and resource isolation
 - Optional Groq and Gemini planner adapters, plus opt-in live provider smoke tests
 
 The Python analytical engine remains authoritative for schema validation, calculations, and numerical results. AI-assisted planning proposes a structured plan; it does not execute arbitrary Python or SQL.
