@@ -86,9 +86,7 @@ def _execute_plan(df: pl.DataFrame, plan: QueryPlan) -> Any:
             agg=plan.aggregation or "count",
         )
     if plan.operation == "aggregate":
-        if not plan.group_by:
-            raise AgentExecutionError("Aggregate plan is missing group_by.")
-        if not plan.metric:
+        if plan.group_by and not plan.metric:
             if plan.aggregation == "count":
                 result = {
                     "analysis": "grouped_count",
@@ -113,7 +111,7 @@ def _execute_plan(df: pl.DataFrame, plan: QueryPlan) -> Any:
             raise AgentExecutionError("Aggregate plan is missing metric.")
         result = aggregate(
             df,
-            group_by=plan.group_by,
+            group_by=plan.group_by or None,
             metric=plan.metric,
             agg=plan.aggregation or "mean",
         )
@@ -136,6 +134,21 @@ def _execute_plan(df: pl.DataFrame, plan: QueryPlan) -> Any:
             result["result"] = rows
             if plan.limit:
                 result["result"] = rows[: plan.limit]
+        if plan.percentage_of_total and plan.group_by and isinstance(result.get("result"), list):
+            value_key = plan.metric or "row_count"
+            rows = result["result"]
+            values = [row.get(value_key) for row in rows]
+            valid_values = [float(value) for value in values if value is not None]
+            denominator = sum(valid_values)
+            for row in rows:
+                value = row.get(value_key)
+                row["percentage_of_total"] = (
+                    float(value) / denominator * 100.0
+                    if value is not None and denominator != 0 else None
+                )
+            result["parameters"]["percentage_of_total"] = True
+            result["metadata"]["percentage_basis"] = value_key
+            result["metadata"]["percentage_denominator"] = denominator
         return result
     raise AgentExecutionError(f"Unsupported operation: {plan.operation}")
 
