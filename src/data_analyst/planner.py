@@ -18,6 +18,7 @@ Operation = Literal[
     "aggregate",
     "correlation",
     "time_series",
+    "anomaly_detection",
 ]
 
 
@@ -238,6 +239,18 @@ def plan_query(
     mentioned_numeric = _numeric_columns(question, columns, numeric_columns)
     mentioned_datetime = _datetime_columns(question, columns, datetime_columns)
 
+    anomaly_intent = any(term in text for term in ("anomaly", "anomalies", "outlier", "outliers", "unusual records", "unusual observations"))
+    if anomaly_intent:
+        selected = mentioned_numeric or list(numeric_columns or [])
+        if not selected:
+            raise PlanningError("Anomaly detection requires at least one numeric column in the dataset.")
+        return QueryPlan(
+            operation="anomaly_detection",
+            columns=selected,
+            question=question,
+            assumptions=["Isolation Forest flags statistically unusual rows; it does not determine whether a row is erroneous or fraudulent."],
+        )
+
     if "correlation" in text or "correlated" in text:
         selected = mentioned_numeric
         if len(selected) < 2:
@@ -409,5 +422,5 @@ def plan_query(
 
     raise PlanningError(
         "Unsupported analytical request. Supported intents: profile, quality, "
-        "describe, grouped aggregation, correlation, and time-series analysis."
+        "describe, grouped aggregation, correlation, time-series analysis, and anomaly detection."
     )
