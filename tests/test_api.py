@@ -276,3 +276,32 @@ def test_predictive_model_api_persists_evaluation_and_enforces_workspace_scope(t
 
         other_headers = register(client, "ml-other@example.com")
         assert client.get(f"/api/v1/analyses/{payload['id']}", headers=other_headers).status_code == 404
+
+
+
+def test_forecast_api_returns_evaluation_and_future_predictions(tmp_path):
+    from datetime import date, timedelta
+
+    with client_for(tmp_path) as client:
+        headers = register(client, "forecast-api@example.com")
+        rows = ["date,sales"]
+        start = date(2025, 1, 1)
+        rows.extend(
+            f"{start + timedelta(days=i)},{100 + 2 * i + (i % 4)}"
+            for i in range(30)
+        )
+        uploaded = client.post(
+            "/api/v1/datasets", headers=headers,
+            files={"file": ("timeseries.csv", ("\\n".join(rows) + "\\n").encode(), "text/csv")},
+        )
+        assert uploaded.status_code == 201, uploaded.text
+        dataset_id = uploaded.json()["id"]
+        response = client.post(
+            f"/api/v1/datasets/{dataset_id}/ml-forecasts", headers=headers,
+            json={"datetime_column": "date", "target": "sales", "horizon": 2, "n_lags": 3},
+        )
+        assert response.status_code == 201, response.text
+        payload = response.json()["response"]
+        assert payload["analysis"] == "time_series_forecast"
+        assert len(payload["result"]["future_forecast"]) == 2
+        assert payload["answer"]["evidence"]
