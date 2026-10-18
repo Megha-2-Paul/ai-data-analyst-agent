@@ -129,3 +129,27 @@ def test_requires_complete_time_series_plan():
             "metric": "revenue", "aggregation": "mean", "datetime_column": "created_at",
             "frequency": None, "sort_direction": None, "limit": None, "assumptions": [],
         })
+
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "message"),
+    [
+        ("operation", [], "Unsupported operation"),
+        ("metric", [], "metric must be a non-empty string"),
+        ("filter_column", [], "filter_column must be a non-empty string"),
+        ("datetime_column", [], "datetime_column must be a non-empty string"),
+        ("aggregation", [], "Unsupported aggregation"),
+        ("frequency", [], "Unsupported frequency"),
+        ("sort_direction", [], "Unsupported sort direction"),
+    ],
+)
+def test_rejects_wrong_field_types_without_leaking_type_errors(field, value, message):
+    payload = {"operation": "profile", field: value}
+    with pytest.raises(LLMPlanningError, match=message):
+        planner_for(schema_df(), payload)
+
+
+def test_rejects_filter_value_without_filter_column():
+    with pytest.raises(LLMPlanningError, match="requires filter_column"):
+        planner_for(schema_df(), {"operation": "profile", "filter_value": "a"})
