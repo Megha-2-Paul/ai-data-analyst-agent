@@ -356,7 +356,7 @@ def plan_query(
         group_matches = _group_columns(question, group_candidates) if grouped_intent else []
         if not group_matches:
             which_match = re.search(
-                r"\\bwhich\\s+(.+?)\\s+(?:has|have|is|was|were)\\b",
+                r"\bwhich\s+(.+?)\s+(?:has|have|is|was|were)\b",
                 question,
                 flags=re.IGNORECASE,
             )
@@ -396,7 +396,7 @@ def plan_query(
             limit=(
                 _detect_limit(question)
                 if _detect_limit(question) is not None
-                else 1 if ranking_intent and re.search(r"\\bwhich\\b", text)
+                else 1 if ranking_intent and re.search(r"\bwhich\b", text)
                 else None
             ),
             question=question,
