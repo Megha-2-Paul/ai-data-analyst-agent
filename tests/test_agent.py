@@ -194,3 +194,26 @@ def test_agent_response_is_strictly_json_serializable_with_datetime_results():
 
     serialized = json.dumps(response.to_dict(), allow_nan=False)
     assert "2025-01-01" in serialized
+
+
+
+def test_grouped_count_ranking_applies_limit_and_generates_evidence():
+    from data_analyst.planner import QueryPlan
+
+    df = pl.DataFrame({"payment_type": ["card", "cash", "cash", "cash", "card"]})
+    planner = lambda question, **kwargs: QueryPlan(
+        operation="aggregate",
+        group_by=["payment_type"],
+        aggregation="count",
+        sort_direction="desc",
+        limit=1,
+        question=question,
+    )
+
+    response = AnalystAgent(planner=planner).ask("Count records by payment_type", df)
+
+    assert response.result["analysis"] == "grouped_count"
+    assert response.result["result"] == [{"payment_type": "cash", "count": 3}]
+    assert response.answer is not None
+    assert response.answer.evidence[0].values["context"] == "payment_type=cash"
+    assert response.answer.evidence[0].values["value"] == 3
