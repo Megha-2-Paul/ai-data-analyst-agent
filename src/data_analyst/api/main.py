@@ -19,6 +19,7 @@ from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from data_analyst.agent import AnalystAgent
+from data_analyst.answer import generate_answer
 from data_analyst.ingestion import load_dataset
 from data_analyst.ml import MLAnalysisError, train_predictive_model
 from data_analyst.llm_planner import LLMPlanningError, OpenAIPlanner
@@ -420,6 +421,9 @@ def create_app(
             raise HTTPException(status_code=503, detail=str(exc))
         except MLAnalysisError as exc:
             raise HTTPException(status_code=422, detail=str(exc))
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail="The model request is not suitable for this dataset.")
+        result["answer"] = generate_answer(result).to_dict()
         question = (
             f"ML {payload.task} evaluation; target={payload.target}; "
             f"features={', '.join(payload.features)}"
