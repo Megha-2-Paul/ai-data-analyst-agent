@@ -78,15 +78,31 @@ def describe(df: pl.DataFrame, columns: Sequence[str] | None = None) -> dict[str
     return _result("descriptive_statistics", {"columns": selected}, rows, row_count=df.height)
 
 
-def aggregate(df: pl.DataFrame, *, group_by: Sequence[str] | None, metric: str, agg: str) -> dict[str, Any]:
+def aggregate(df: pl.DataFrame, *, group_by: Sequence[str] | None, metric: str | None, agg: str) -> dict[str, Any]:
     """Aggregate a metric globally or by one or more grouping columns."""
-    _require_columns(df, [metric, *(group_by or [])])
     if agg not in SUPPORTED_AGGREGATIONS:
         raise ValueError(f"Unsupported aggregation '{agg}'. Choose from: {', '.join(sorted(SUPPORTED_AGGREGATIONS))}")
-    expression = pl.col(metric).count() if agg == "count" else getattr(pl.col(metric), agg)()
-    result = df.group_by(list(group_by), maintain_order=True).agg(expression.alias(metric)).to_dicts() if group_by else df.select(expression.alias(metric)).to_dicts()
-    return _result("grouped_aggregation" if group_by else "aggregation", {"group_by": list(group_by or []), "metric": metric, "aggregation": agg}, result)
+    if metric is None and agg != "count":
+        raise ValueError("A metric is required for aggregations other than count.")
 
+    _require_columns(df, [*([metric] if metric is not None else []), *(group_by or [])])
+    if agg == "count" and metric is None:
+        expression = pl.len().alias("row_count")
+    elif agg == "count":
+        expression = pl.col(metric).count().alias(metric)
+    else:
+        expression = getattr(pl.col(metric), agg)().alias(metric)
+
+    result = (
+        df.group_by(list(group_by), maintain_order=True).agg(expression).to_dicts()
+        if group_by
+        else df.select(expression).to_dicts()
+    )
+    return _result(
+        "grouped_aggregation" if group_by else "aggregation",
+        {"group_by": list(group_by or []), "metric": metric, "aggregation": agg},
+        result,
+    )
 
 def correlation(df: pl.DataFrame, columns: Sequence[str] | None = None) -> dict[str, Any]:
     """Return a Pearson correlation matrix for numeric columns."""
