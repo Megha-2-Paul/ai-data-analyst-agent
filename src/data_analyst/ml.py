@@ -250,7 +250,7 @@ def forecast_time_series(
     if len(raw_values) < max(20, n_lags + 12):
         raise MLAnalysisError(f"Forecasting requires at least {max(20, n_lags + 12)} finite observations.")
     X = np.asarray([
-        [*raw_values[index - lag] for lag in range(1, n_lags + 1)]
+        [raw_values[index - lag] for lag in range(1, n_lags + 1)]
         for index in range(n_lags, len(raw_values))
     ], dtype=float)
     # A monotonic time index helps the model distinguish recurring lag values
