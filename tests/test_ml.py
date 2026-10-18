@@ -3,6 +3,7 @@ import polars as pl
 import pytest
 
 from data_analyst.agent import AnalystAgent
+from data_analyst.answer import generate_answer
 from data_analyst.ml import MLAnalysisError, detect_anomalies, train_predictive_model
 
 
@@ -39,6 +40,8 @@ def test_agent_routes_anomaly_question_to_ml_module():
     assert response.plan.operation == "anomaly_detection"
     assert response.result["analysis"] == "anomaly_detection"
     assert "Isolation Forest" in response.plan.assumptions[0]
+    assert response.answer is not None
+    assert response.answer.evidence
 
 
 def test_regression_model_reports_held_out_metrics():
@@ -59,6 +62,9 @@ def test_regression_model_reports_held_out_metrics():
     assert set(result["result"]["metrics"]) == {"mae", "rmse", "r2"}
     assert np.isfinite(result["result"]["metrics"]["rmse"])
     assert result["metadata"]["limitations"]
+    answer = generate_answer(result)
+    assert answer.evidence
+    assert "held-out" in answer.summary
 
 
 def test_classification_model_reports_weighted_metrics():
