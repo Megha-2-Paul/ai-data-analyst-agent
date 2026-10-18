@@ -53,7 +53,7 @@ def test_demo_upload_is_parsed_in_memory_and_not_persisted(tmp_path):
         assert body["source"] == "uploaded_file_in_memory"
         assert body["dataset"]["rows"] == 3
         assert body["dataset"]["column_names"] == ["category", "revenue"]
-        assert not (tmp_path / "uploads").exists()
+        assert list((tmp_path / "uploads").iterdir()) == []
 
 
 def test_demo_upload_limits_and_supported_formats(tmp_path):
