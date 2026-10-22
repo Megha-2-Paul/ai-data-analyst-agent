@@ -181,6 +181,24 @@ class AnalystAgent:
             name for name, dtype in df.schema.items()
             if dtype in (pl.Date, pl.Datetime)
         ]
+        # Supply a bounded vocabulary of observed non-numeric values so the
+        # deterministic planner can resolve natural phrasing such as "for the
+        # West region" without hardcoding any domain-specific schema.
+        categorical_values: dict[str, list[Any]] = {}
+        for name, dtype in df.schema.items():
+            if dtype.is_numeric() or dtype in (pl.Date, pl.Datetime):
+                continue
+            values = (
+                df.get_column(name)
+                .drop_nulls()
+                .unique(maintain_order=True)
+                .head(250)
+                .to_list()
+            )
+            categorical_values[name] = [
+                value for value in values
+                if len(str(value)) <= 120
+            ]
 
         try:
             analysis_plan = plan_analysis(
@@ -217,6 +235,7 @@ class AnalystAgent:
             columns=df.columns,
             numeric_columns=numeric_columns,
             datetime_columns=datetime_columns,
+            categorical_values=categorical_values,
         )
         result = _execute_plan(df, plan)
 
