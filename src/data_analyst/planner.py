@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import asdict, dataclass, field
-from typing import Any, Literal, Sequence
+from typing import Any, Literal, Mapping, Sequence
 
 Operation = Literal[
     "profile",
@@ -18,6 +18,7 @@ Operation = Literal[
     "aggregate",
     "correlation",
     "time_series",
+    "anomaly_detection",
 ]
 
 
@@ -33,23 +34,26 @@ class QueryPlan:
     columns: list[str] = field(default_factory=list)
     group_by: list[str] = field(default_factory=list)
     metric: str | None = None
-    agg: str | None = None
+    aggregation: str | None = None
     datetime_column: str | None = None
     frequency: str | None = None
     sort_direction: str | None = None
     limit: int | None = None
     question: str = ""
     assumptions: list[str] = field(default_factory=list)
+    filter_column: str | None = None
+    filter_value: Any | None = None
+    percentage_of_total: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         result = asdict(self)
-        result["aggregation"] = self.agg
+        result["agg"] = self.aggregation
         return result
 
     @property
-    def aggregation(self) -> str | None:
-        """Compatibility alias for the analysis API's ``agg`` parameter."""
-        return self.agg
+    def agg(self) -> str | None:
+        """Compatibility alias for callers using the analysis API's ``agg`` name."""
+        return self.aggregation
 
 
 _AGGREGATIONS = {
@@ -138,6 +142,7 @@ def _detect_frequency(question: str, columns: Sequence[str]) -> str | None:
     column_spans = [(start, end) for start, end, _ in _column_matches(question, columns)]
     units = {
         "year": "1y",
+        "years": "1y",
         "yearly": "1y",
         "annual": "1y",
         "annually": "1y",
@@ -188,6 +193,83 @@ def _detect_sort(question: str) -> str | None:
     return next(iter(directions), None)
 
 
+def _detect_explicit_filter(
+    question: str,
+    columns: Sequence[str],
+    categorical_values: Mapping[str, Sequence[Any]] | None = None,
+) -> tuple[str, Any] | tuple[None, None]:
+    """Resolve explicit filters and common value-first phrasing against observed data.
+
+    The value vocabulary is supplied by the caller from the current dataset; the
+    planner never assumes domain-specific columns or values.
+    """
+    for column in sorted(columns, key=len, reverse=True):
+        pattern = (
+            r"\b(?:where|filter(?:ed)? by)\s+"
+            + re.escape(column)
+            + r"\s*(?:is|equals|equal to|=)\s*"
+            + r"""(?:['"]([^'"]+)['"]|([^,;?.]+))"""
+        )
+        match = re.search(pattern, question, flags=re.IGNORECASE)
+        if match:
+            value = (match.group(1) or match.group(2) or "").strip()
+            if value:
+                return column, value
+
+    if not categorical_values:
+        return None, None
+
+    normalized_question = f" {_normalize(question)} "
+    candidates: list[tuple[str, Any]] = []
+    for column, values in categorical_values.items():
+        if column not in columns:
+            continue
+        normalized_column = _normalize(column)
+        column_mentioned = bool(
+            normalized_column
+            and re.search(
+                rf"(?<![a-z0-9]){re.escape(normalized_column)}(?![a-z0-9])",
+                normalized_question,
+            )
+        )
+        for value in values:
+            if value is None:
+                continue
+            normalized_value = _normalize(str(value))
+            if not normalized_value:
+                continue
+            value_pattern = rf"(?<![a-z0-9]){re.escape(normalized_value)}(?![a-z0-9])"
+            if not re.search(value_pattern, normalized_question):
+                continue
+            value_context = bool(
+                re.search(
+                    rf"\b(?:for|in|within|from|under|where)\s+(?:the\s+)?{re.escape(normalized_value)}\b",
+                    normalized_question,
+                )
+                or re.search(
+                    rf"\b{re.escape(normalized_value)}\s+{re.escape(normalized_column)}\b",
+                    normalized_question,
+                )
+            )
+            if column_mentioned or value_context:
+                candidates.append((column, value))
+
+    unique_candidates: list[tuple[str, Any]] = []
+    for candidate in candidates:
+        if not any(
+            candidate[0] == existing[0]
+            and str(candidate[1]).casefold() == str(existing[1]).casefold()
+            for existing in unique_candidates
+        ):
+            unique_candidates.append(candidate)
+
+    if len(unique_candidates) > 1:
+        details = ", ".join(f"{column}={value!r}" for column, value in unique_candidates)
+        raise PlanningError(
+            f"Ambiguous filter value in question; it matches multiple dataset values: {details}."
+        )
+    return unique_candidates[0] if unique_candidates else (None, None)
+
 def _one_column(columns: Sequence[str], purpose: str) -> str | None:
     if len(columns) > 1:
         raise PlanningError(f"Name exactly one {purpose}; found: {', '.join(columns)}.")
@@ -213,6 +295,7 @@ def plan_query(
     columns: Sequence[str],
     numeric_columns: Sequence[str] | None = None,
     datetime_columns: Sequence[str] | None = None,
+    categorical_values: Mapping[str, Sequence[Any]] | None = None,
 ) -> QueryPlan:
     """Convert a supported natural-language question into a structured plan.
 
@@ -234,6 +317,21 @@ def plan_query(
 
     mentioned_numeric = _numeric_columns(question, columns, numeric_columns)
     mentioned_datetime = _datetime_columns(question, columns, datetime_columns)
+    filter_column, filter_value = _detect_explicit_filter(
+        question, columns, categorical_values=categorical_values
+    )
+
+    anomaly_intent = any(term in text for term in ("anomaly", "anomalies", "outlier", "outliers", "unusual records", "unusual observations"))
+    if anomaly_intent:
+        selected = mentioned_numeric or list(numeric_columns or [])
+        if not selected:
+            raise PlanningError("Anomaly detection requires at least one numeric column in the dataset.")
+        return QueryPlan(
+            operation="anomaly_detection",
+            columns=selected,
+            question=question,
+            assumptions=["Isolation Forest flags statistically unusual rows; it does not determine whether a row is erroneous or fraudulent."],
+        )
 
     if "correlation" in text or "correlated" in text:
         selected = mentioned_numeric
@@ -243,57 +341,185 @@ def plan_query(
             operation="correlation",
             columns=selected,
             question=question,
+            filter_column=filter_column,
+            filter_value=filter_value,
         )
 
     frequency = _detect_frequency(question, columns)
-    if frequency is not None or any(term in text for term in ("trend", "over time", "time series")):
+    time_series_intent = frequency is not None or any(
+        term in text
+        for term in ("trend", "over time", "time series", "over the years", "over years")
+    )
+    if time_series_intent:
         datetime_column = _one_column(mentioned_datetime, "date/datetime column")
         if datetime_column is None:
-            raise PlanningError("Time-series analysis requires an explicitly named date/datetime column.")
-        metric = _one_column(mentioned_numeric, "numeric metric")
+            year_columns = [column for column in columns if _normalize(column) == "year"]
+            if len(year_columns) > 1:
+                raise PlanningError("Ambiguous year column; provide an explicit date/datetime column.")
+            if len(year_columns) == 1 and any(
+                term in text for term in ("year", "years", "yearly", "annual", "annually", "over time")
+            ):
+                datetime_column = year_columns[0]
+        if datetime_column is None:
+            raise PlanningError(
+                "Time-series analysis requires an explicitly named date/datetime column or year column."
+            )
+
+        metric_candidates = [
+            column for column in mentioned_numeric if column != datetime_column
+        ]
+        metric = _one_column(metric_candidates, "numeric metric")
         aggregation = _detect_aggregation(question)
         assumptions = []
         if aggregation is None:
-            aggregation = "count"
-            assumptions.append("No aggregation was specified; defaulted to count.")
+            aggregation = "mean" if metric is not None else "count"
+            default_label = "mean" if metric is not None else "count"
+            assumptions.append(f"No aggregation was specified; defaulted to {default_label}.")
+
         if frequency is None:
-            frequency = "1d"
-            assumptions.append("No time frequency was specified; defaulted to daily (1d).")
+            frequency = "1y" if _normalize(datetime_column) == "year" else "1d"
+            label = "yearly (1y)" if frequency == "1y" else "daily (1d)"
+            assumptions.append(f"No time frequency was specified; defaulted to {label}.")
+
+        numeric_set = set(numeric_columns or [])
+        datetime_set = set(datetime_columns or [])
+        non_temporal_categorical = [
+            column for column in columns
+            if column not in numeric_set
+            and column not in datetime_set
+            and column != datetime_column
+        ]
+        country_columns = [
+            column for column in non_temporal_categorical
+            if _normalize(column) in ("country", "country name")
+        ]
+        if country_columns:
+            country_match = re.search(
+                r"\b([A-Za-z][A-Za-z ._-]{0,60}?)'s\s+",
+                question,
+                flags=re.IGNORECASE,
+            )
+            if country_match:
+                candidate = country_match.group(1).strip()
+                candidate = re.sub(
+                    r"^(?:(?:how|what|when|where|why|did|does|has|have|is|was|were|show|give|tell|calculate|compute|find|display)\s+)+",
+                    "",
+                    candidate,
+                    flags=re.IGNORECASE,
+                )
+                candidate = re.sub(
+                    r"^(?:the\s+)?(?:sum|average|mean|total|median|minimum|maximum)\s+(?:of\s+)?",
+                    "",
+                    candidate,
+                    flags=re.IGNORECASE,
+                ).strip()
+                if candidate:
+                    filter_column = country_columns[0]
+                    filter_value = candidate
+
         return QueryPlan(
             operation="time_series",
             datetime_column=datetime_column,
             metric=metric,
-            agg=aggregation,
+            aggregation=aggregation,
             frequency=frequency,
             question=question,
             assumptions=assumptions,
+            filter_column=filter_column,
+            filter_value=filter_value,
         )
 
     aggregation = _detect_aggregation(question)
-    if aggregation and any(term in text for term in (" by ", " per ", " each ", " grouped", "group by")):
-        group_matches = _group_columns(question, columns)
+    percentage_of_total = any(term in text for term in ("percentage", "percent", "share of total", "proportion of total"))
+    grouped_intent = any(
+        term in text for term in (" by ", " per ", " each ", " grouped", "group by")
+    )
+    ranking_intent = any(
+        term in text
+        for term in ("highest", "largest", "maximum", "lowest", "smallest", "minimum", "top", "bottom")
+    )
+    if aggregation and (grouped_intent or ranking_intent):
+        # Exclude temporal columns from grouping candidates, but allow numeric
+        # grouping dimensions such as payment_type. Select the metric only after
+        # resolving the grouping column so multiple metrics cannot be guessed.
+        # Resolve the grouping dimension before selecting a metric. In ranking
+        # questions, the group often appears in a "which <column> has ..." clause
+        # rather than a "by/per" clause, and that column may itself be numeric.
+        group_candidates = [
+            column for column in columns if column not in mentioned_datetime
+        ]
+
+        group_matches = _group_columns(question, group_candidates) if grouped_intent else []
+        if not group_matches:
+            which_match = re.search(
+                r"\bwhich\s+(.+?)\s+(?:has|have|is|was|were)\b",
+                question,
+                flags=re.IGNORECASE,
+            )
+            if which_match:
+                group_matches = _find_columns(which_match.group(1), group_candidates)
+        if not group_matches:
+            grouping_pattern = re.compile(
+                r"\b(?:by|per|each)\s+(.+?)(?=\s+(?:and|with|over|for)\b|[?,.]|$)",
+                re.IGNORECASE,
+            )
+            for match in grouping_pattern.finditer(question):
+                group_matches.extend(_find_columns(match.group(1), group_candidates))
+        if not group_matches:
+            group_matches = _find_columns(question, group_candidates)
+
+        group_matches = list(dict.fromkeys(group_matches))
         if not group_matches:
             raise PlanningError("Grouped analysis requires an explicitly named grouping column.")
-        metric_candidates = [column for column in mentioned_numeric if column not in group_matches]
-        metric = _one_column(metric_candidates, "numeric metric")
-        if aggregation != "count" and metric is None:
-            raise PlanningError("Grouped metric analysis requires an explicitly named numeric metric.")
+
+        metric_candidates = [
+            column for column in mentioned_numeric
+            if column not in group_matches and column not in mentioned_datetime
+        ]
+        if aggregation != "count":
+            selected_metric = _one_column(metric_candidates, "numeric metric")
+            if selected_metric is None:
+                raise PlanningError("Grouped metric analysis requires an explicitly named numeric metric.")
+        else:
+            selected_metric = metric_candidates[0] if metric_candidates else None
+
         return QueryPlan(
             operation="aggregate",
             group_by=group_matches,
-            metric=metric,
-            agg=aggregation,
+            metric=selected_metric,
+            aggregation=aggregation,
+            filter_column=filter_column,
+            filter_value=filter_value,
+            percentage_of_total=percentage_of_total,
             sort_direction=_detect_sort(question),
-            limit=_detect_limit(question),
+            limit=(
+                _detect_limit(question)
+                if _detect_limit(question) is not None
+                else 1 if ranking_intent and re.search(r"\bwhich\b", text)
+                else None
+            ),
             question=question,
+        )
+
+    if aggregation and not grouped_intent and not ranking_intent:
+        selected_metric = _one_column(mentioned_numeric, "numeric metric")
+        if aggregation != "count" and selected_metric is None:
+            raise PlanningError("A global aggregation requires an explicitly named numeric metric.")
+        return QueryPlan(
+            operation="aggregate",
+            metric=selected_metric,
+            aggregation=aggregation,
+            question=question,
+            filter_column=filter_column,
+            filter_value=filter_value,
         )
 
     if any(term in text for term in ("describe", "descriptive statistics", "summary statistics", "statistics for", "distribution of")):
         if not mentioned_numeric:
             raise PlanningError("Descriptive statistics require at least one explicitly named numeric column.")
-        return QueryPlan(operation="describe", columns=mentioned_numeric, question=question)
+        return QueryPlan(operation="describe", columns=mentioned_numeric, question=question, filter_column=filter_column, filter_value=filter_value)
 
     raise PlanningError(
         "Unsupported analytical request. Supported intents: profile, quality, "
-        "describe, grouped aggregation, correlation, and time-series analysis."
+        "describe, grouped aggregation, correlation, time-series analysis, and anomaly detection."
     )

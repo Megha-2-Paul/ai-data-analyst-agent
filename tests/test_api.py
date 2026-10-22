@@ -1,0 +1,307 @@
+"""API integration tests using an isolated SQLite database and temporary storage."""
+
+import pytest
+from fastapi.testclient import TestClient
+
+from data_analyst.api.database import Base, make_engine
+from data_analyst.api.main import create_app
+
+
+def client_for(tmp_path):
+    db_path = tmp_path / "test.sqlite"
+    engine = make_engine(f"sqlite:///{db_path}")
+    Base.metadata.create_all(engine)
+    engine.dispose()
+    app = create_app(
+        database_url=f"sqlite:///{db_path}",
+        storage_dir=tmp_path / "uploads",
+        secret_key="test-secret-key-that-is-long-enough-for-testing",
+    )
+    return TestClient(app)
+
+
+def register(client, email):
+    response = client.post("/api/v1/auth/register", json={"email": email, "password": "secure-pass-123"})
+    assert response.status_code == 201, response.text
+    token = client.post("/api/v1/auth/login", json={"email": email, "password": "secure-pass-123"}).json()["access_token"]
+    return {"Authorization": f"Bearer {token}"}
+
+
+def upload_csv(client, headers, name="sales.csv", workspace_id=None):
+    data = {"workspace_id": str(workspace_id)} if workspace_id is not None else None
+    return client.post(
+        "/api/v1/datasets", headers=headers, data=data,
+        files={"file": (name, b"category,revenue\na,10\nb,20\na,30\n", "text/csv")},
+    )
+
+
+def test_auth_dataset_analysis_report_and_usage_flow(tmp_path):
+    with client_for(tmp_path) as client:
+        headers = register(client, "analyst@example.com")
+        upload = upload_csv(client, headers)
+        assert upload.status_code == 201, upload.text
+        dataset_id = upload.json()["id"]
+
+        profile = client.get(f"/api/v1/datasets/{dataset_id}/profile", headers=headers)
+        assert profile.status_code == 200
+        assert profile.json()["row_count"] == 3
+
+        analysis = client.post(
+            f"/api/v1/datasets/{dataset_id}/analyses", headers=headers,
+            json={"question": "What is the average revenue by category?", "planner": "deterministic"},
+        )
+        assert analysis.status_code == 201, analysis.text
+        analysis_id = analysis.json()["id"]
+        assert analysis.json()["response"]["answer"]["evidence"]
+
+        report = client.post(f"/api/v1/analyses/{analysis_id}/report", headers=headers)
+        assert report.status_code == 201, report.text
+        report_id = report.json()["id"]
+        download = client.get(f"/api/v1/reports/{report_id}/download", headers=headers)
+        assert download.status_code == 200
+        assert "application/json" in download.headers["content-type"]
+
+        usage = client.get("/api/v1/usage", headers=headers)
+        assert usage.status_code == 200
+        assert any(row["action"] == "analysis" for row in usage.json()["events"])
+
+
+def test_requires_authentication_and_rejects_invalid_token(tmp_path):
+    with client_for(tmp_path) as client:
+        assert client.get("/api/v1/datasets").status_code == 401
+        assert client.get("/api/v1/datasets", headers={"Authorization": "Bearer bad"}).status_code == 401
+
+
+def test_user_cannot_access_another_users_dataset(tmp_path):
+    with client_for(tmp_path) as client:
+        owner_headers = register(client, "owner@example.com")
+        other_headers = register(client, "other@example.com")
+        dataset = upload_csv(client, owner_headers).json()
+        dataset_id = dataset["id"]
+        assert client.get(f"/api/v1/datasets/{dataset_id}", headers=other_headers).status_code == 404
+        assert client.get(f"/api/v1/datasets/{dataset_id}/profile", headers=other_headers).status_code == 404
+        assert client.delete(f"/api/v1/datasets/{dataset_id}", headers=other_headers).status_code == 404
+        analysis = client.post(
+            f"/api/v1/datasets/{dataset_id}/analyses", headers=owner_headers,
+            json={"question": "What is the average revenue by category?", "planner": "deterministic"},
+        ).json()
+        analysis_id = analysis["id"]
+        report = client.post(f"/api/v1/analyses/{analysis_id}/report", headers=owner_headers).json()
+        report_id = report["id"]
+        assert client.get(f"/api/v1/analyses/{analysis_id}", headers=other_headers).status_code == 404
+        assert client.get(f"/api/v1/reports/{report_id}", headers=other_headers).status_code == 404
+        assert client.get(f"/api/v1/reports/{report_id}/download", headers=other_headers).status_code == 404
+
+
+def test_upload_validation_and_size_limit(tmp_path, monkeypatch):
+    with client_for(tmp_path) as client:
+        headers = register(client, "uploads@example.com")
+        bad = client.post("/api/v1/datasets", headers=headers, files={"file": ("bad.txt", b"hello", "text/plain")})
+        assert bad.status_code == 422
+        monkeypatch.setenv("MAX_UPLOAD_BYTES", "10")
+        too_large = client.post(
+            "/api/v1/datasets", headers=headers,
+            files={"file": ("large.csv", b"category,revenue\na,123456789", "text/csv")},
+        )
+        assert too_large.status_code == 413
+
+
+def test_dataset_preparation_does_not_change_uploaded_source(tmp_path):
+    with client_for(tmp_path) as client:
+        headers = register(client, "prep@example.com")
+        dataset = upload_csv(client, headers).json()
+        before = client.get(f"/api/v1/datasets/{dataset['id']}/profile", headers=headers).json()
+        prepared = client.post(f"/api/v1/datasets/{dataset['id']}/prepare", headers=headers)
+        after = client.get(f"/api/v1/datasets/{dataset['id']}/profile", headers=headers).json()
+        assert prepared.status_code == 200
+        assert before == after
+
+
+def test_provider_without_key_returns_controlled_service_error(tmp_path, monkeypatch):
+    with client_for(tmp_path) as client:
+        headers = register(client, "provider@example.com")
+        dataset = upload_csv(client, headers).json()
+        monkeypatch.delenv("GROQ_API_KEY", raising=False)
+        response = client.post(
+            f"/api/v1/datasets/{dataset['id']}/analyses", headers=headers,
+            json={"question": "What is the average revenue by category?", "planner": "groq"},
+        )
+        assert response.status_code == 503
+
+def test_daily_analysis_quota_is_enforced(tmp_path, monkeypatch):
+    monkeypatch.setenv("MAX_DAILY_ANALYSES", "1")
+    with client_for(tmp_path) as client:
+        headers = register(client, "quota@example.com")
+        dataset = upload_csv(client, headers).json()
+        route = f"/api/v1/datasets/{dataset['id']}/analyses"
+        payload = {"question": "What is the average revenue by category?", "planner": "deterministic"}
+        assert client.post(route, headers=headers, json=payload).status_code == 201
+        limited = client.post(route, headers=headers, json=payload)
+        assert limited.status_code == 429
+
+
+def test_provider_runtime_failure_is_reported_as_service_unavailable(tmp_path, monkeypatch):
+    from data_analyst.llm_planner import LLMPlanningError
+    import data_analyst.api.main as api_main
+
+    monkeypatch.setenv("GROQ_API_KEY", "test-key")
+
+    def unavailable(*args, **kwargs):
+        raise LLMPlanningError("Groq planning request failed (TimeoutError).")
+
+    monkeypatch.setattr(api_main, "GroqPlanner", lambda: unavailable)
+    with client_for(tmp_path) as client:
+        headers = register(client, "provider-error@example.com")
+        dataset = upload_csv(client, headers).json()
+        response = client.post(
+            f"/api/v1/datasets/{dataset['id']}/analyses",
+            headers=headers,
+            json={"question": "What is the average revenue by category?", "planner": "groq"},
+        )
+        assert response.status_code == 503
+
+def test_workspace_members_can_collaborate_but_only_owners_can_delete_datasets(tmp_path):
+    with client_for(tmp_path) as client:
+        owner_headers = register(client, "workspace-owner@example.com")
+        member_headers = register(client, "workspace-member@example.com")
+        workspace = client.post(
+            "/api/v1/workspaces", headers=owner_headers, json={"name": "Research team"}
+        )
+        assert workspace.status_code == 201, workspace.text
+        workspace_id = workspace.json()["id"]
+        added = client.post(
+            f"/api/v1/workspaces/{workspace_id}/members",
+            headers=owner_headers, json={"email": "workspace-member@example.com"},
+        )
+        assert added.status_code == 201, added.text
+        assert added.json()["role"] == "member"
+
+        upload = upload_csv(client, owner_headers, workspace_id=workspace_id)
+        assert upload.status_code == 201, upload.text
+        dataset_id = upload.json()["id"]
+        assert upload.json()["workspace_id"] == workspace_id
+        assert client.get(f"/api/v1/datasets/{dataset_id}", headers=member_headers).status_code == 200
+
+        analysis = client.post(
+            f"/api/v1/datasets/{dataset_id}/analyses", headers=member_headers,
+            json={"question": "What is the average revenue by category?", "planner": "deterministic"},
+        )
+        assert analysis.status_code == 201, analysis.text
+        analysis_id = analysis.json()["id"]
+        report = client.post(f"/api/v1/analyses/{analysis_id}/report", headers=member_headers)
+        assert report.status_code == 201, report.text
+        report_id = report.json()["id"]
+        assert client.get(f"/api/v1/reports/{report_id}", headers=owner_headers).status_code == 200
+        assert client.delete(f"/api/v1/datasets/{dataset_id}", headers=member_headers).status_code == 403
+
+
+
+def test_production_rejects_example_secret(tmp_path, monkeypatch):
+    monkeypatch.setenv("APP_ENV", "production")
+    monkeypatch.setenv("APP_SECRET_KEY", "replace-with-a-unique-random-secret-at-least-32-characters")
+    with pytest.raises(RuntimeError, match="unique random secret"):
+        create_app(database_url=f"sqlite:///{tmp_path / 'production.sqlite'}", storage_dir=tmp_path / "uploads")
+
+
+def test_non_owner_cannot_add_workspace_members(tmp_path):
+    with client_for(tmp_path) as client:
+        owner_headers = register(client, "team-owner@example.com")
+        member_headers = register(client, "team-member@example.com")
+        third_headers = register(client, "team-third@example.com")
+        workspace = client.post("/api/v1/workspaces", headers=owner_headers, json={"name": "Private team"}).json()
+        workspace_id = workspace["id"]
+        added = client.post(
+            f"/api/v1/workspaces/{workspace_id}/members",
+            headers=owner_headers, json={"email": "team-member@example.com"},
+        )
+        assert added.status_code == 201
+        denied = client.post(
+            f"/api/v1/workspaces/{workspace_id}/members",
+            headers=member_headers, json={"email": "team-third@example.com"},
+        )
+        assert denied.status_code == 403
+        assert client.get(f"/api/v1/workspaces/{workspace_id}/members", headers=third_headers).status_code == 404
+
+
+def test_sqlite_foreign_keys_cascade_dataset_deletion(tmp_path):
+    with client_for(tmp_path) as client:
+        headers = register(client, "cascade@example.com")
+        dataset = upload_csv(client, headers).json()
+        analysis = client.post(
+            f"/api/v1/datasets/{dataset['id']}/analyses", headers=headers,
+            json={"question": "What is the average revenue by category?", "planner": "deterministic"},
+        ).json()
+        report = client.post(f"/api/v1/analyses/{analysis['id']}/report", headers=headers).json()
+        deleted = client.delete(f"/api/v1/datasets/{dataset['id']}", headers=headers)
+        assert deleted.status_code == 204
+        assert client.get(f"/api/v1/analyses/{analysis['id']}", headers=headers).status_code == 404
+        assert client.get(f"/api/v1/reports/{report['id']}", headers=headers).status_code == 404
+
+
+
+def test_predictive_model_api_persists_evaluation_and_enforces_workspace_scope(tmp_path):
+    with client_for(tmp_path) as client:
+        headers = register(client, "ml-api@example.com")
+        rows = ["feature,target"]
+        rows.extend(f"{i},{3 * i + (i % 2)}" for i in range(30))
+        uploaded = client.post(
+            "/api/v1/datasets", headers=headers,
+            files={"file": ("model.csv", ("\n".join(rows) + "\n").encode(), "text/csv")},
+        )
+        assert uploaded.status_code == 201, uploaded.text
+        dataset_id = uploaded.json()["id"]
+
+        response = client.post(
+            f"/api/v1/datasets/{dataset_id}/ml-models", headers=headers,
+            json={"target": "target", "features": ["feature"], "task": "regression"},
+        )
+        assert response.status_code == 201, response.text
+        payload = response.json()
+        assert payload["response"]["analysis"] == "predictive_model_evaluation"
+        assert payload["response"]["result"]["test_rows"] == 6
+        assert "rmse" in payload["response"]["result"]["metrics"]
+
+        stored = client.get(f"/api/v1/analyses/{payload['id']}", headers=headers)
+        assert stored.status_code == 200
+        assert stored.json()["response"]["method"] == "RandomForestRegressor"
+        assert stored.json()["response"]["answer"]["evidence"]
+
+        anomaly = client.post(
+            f"/api/v1/datasets/{dataset_id}/analyses", headers=headers,
+            json={"question": "Find outliers in target", "planner": "deterministic"},
+        )
+        assert anomaly.status_code == 201, anomaly.text
+        assert anomaly.json()["response"]["result"]["analysis"] == "anomaly_detection"
+        assert anomaly.json()["response"]["answer"]["summary"]
+
+        other_headers = register(client, "ml-other@example.com")
+        assert client.get(f"/api/v1/analyses/{payload['id']}", headers=other_headers).status_code == 404
+
+
+
+def test_forecast_api_returns_evaluation_and_future_predictions(tmp_path):
+    from datetime import date, timedelta
+
+    with client_for(tmp_path) as client:
+        headers = register(client, "forecast-api@example.com")
+        rows = ["date,sales"]
+        start = date(2025, 1, 1)
+        rows.extend(
+            f"{start + timedelta(days=i)},{100 + 2 * i + (i % 4)}"
+            for i in range(30)
+        )
+        uploaded = client.post(
+            "/api/v1/datasets", headers=headers,
+            files={"file": ("timeseries.csv", ("\n".join(rows) + "\n").encode(), "text/csv")},
+        )
+        assert uploaded.status_code == 201, uploaded.text
+        dataset_id = uploaded.json()["id"]
+        response = client.post(
+            f"/api/v1/datasets/{dataset_id}/ml-forecasts", headers=headers,
+            json={"datetime_column": "date", "target": "sales", "horizon": 2, "n_lags": 3},
+        )
+        assert response.status_code == 201, response.text
+        payload = response.json()["response"]
+        assert payload["analysis"] == "time_series_forecast"
+        assert len(payload["result"]["future_forecast"]) == 2
+        assert payload["answer"]["evidence"]

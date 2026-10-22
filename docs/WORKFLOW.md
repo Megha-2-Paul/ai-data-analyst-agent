@@ -80,12 +80,19 @@ This checkpoint reflects the repository audit recorded on 2026-10-18. Re-check l
 - PR #6 (LLM planner), PR #7 (multi-step analytical reasoning), and PR #8 (evidence-backed answer generation) were reported merged into feature branches, not into `main`. Their presence in feature history must not be treated as proof that those stages are integrated into `main`.
 - PR #9, **Stage 4 data preparation**, was reported open with base `stage-3-evidence-answer` and head `stage-4-data-preparation`.
 - Feature branches have substantial divergence from `main`. Before integration, compare branch ancestry and diffs, inspect overlapping changes and tests, and agree on an integration sequence. Do not merge or clean up branches as part of a status audit.
-- A provider discrepancy exists between the `main` plan (Groq integration) and feature-branch work that includes an OpenAI-based planner. Resolve the intended provider and interface in an approved plan before treating these as one implementation.
+- The approved backend scope on stage-4-data-preparation includes optional Groq and Gemini planner adapters alongside the existing OpenAI adapter. Keep provider credentials external to source control, preserve deterministic planning, and run live provider smoke tests only when a key is configured.
 
 ### Next-stage guardrails
 
 1. Audit current `main`, feature branches, open PRs, and CI before selecting the next implementation task.
 2. Decide which feature-branch work should be reviewed and integrated before beginning additional functionality.
-3. For a future LLM planner/provider integration, approve the provider choice, configuration contract, deterministic fallback, error handling, security controls, and acceptance tests before coding.
+3. For changes to the approved Groq, Gemini, or OpenAI planner adapters, preserve the shared QueryPlan validation contract, deterministic fallback, bounded requests, safe error handling, and offline plus opt-in live tests.
 4. For a possible n8n workflow, define the user-facing workflow and data flow first. Keep calculations and validation in the existing Python engine; expose or wrap interfaces only through a separately approved design.
 5. Do not assume that a planned feature is implemented, that a feature-branch merge updates `main`, or that an old CI result validates newer commits.
+
+
+## Backend implementation checkpoint — 2026-10-18
+
+The user approved the consolidated Phases 2B–2E backend plan for implementation on the existing stage-4-data-preparation branch. The current implementation includes a FastAPI boundary, PostgreSQL-compatible persistence and initial Alembic migration, token authentication, personal/team workspaces with membership-based resource isolation, CSV/Parquet upload, analysis history, JSON reports, usage events, quotas, and optional Groq/Gemini planner adapters. The implementation remains on the feature branch; main must remain unchanged and PR #9 must not be merged without separate authorization.
+
+Standard CI uses fake provider responses. Live Groq/Gemini smoke tests require repository Actions secrets and should not be reported as completed when keys are absent. Finish by validating migrations, API isolation, provider failure handling, Docker setup, documentation, and the full CI result before the user pulls the branch.

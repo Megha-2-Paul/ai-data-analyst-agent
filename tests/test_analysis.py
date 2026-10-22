@@ -104,3 +104,22 @@ def test_time_series_supports_yearly_polars_interval():
         (2023, 25.0),
         (2024, 20.0),
     ]
+
+
+def test_time_series_supports_integer_year():
+    df = pl.DataFrame({
+        "year": [2020, 2021, 2022],
+        "gdp_growth": [3.0, 4.0, 5.0],
+    })
+    result = time_series(
+        df,
+        datetime_column="year",
+        frequency="1y",
+        metric="gdp_growth",
+        agg="mean",
+    )
+    assert result["result"] == [
+        {"year": 2020, "gdp_growth": 3.0},
+        {"year": 2021, "gdp_growth": 4.0},
+        {"year": 2022, "gdp_growth": 5.0},
+    ]

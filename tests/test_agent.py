@@ -1,0 +1,219 @@
+import json
+
+import polars as pl
+import pytest
+
+from data_analyst.agent import AnalystAgent
+
+
+def make_df() -> pl.DataFrame:
+    return pl.DataFrame(
+        {
+            "payment_type": ["card", "cash", "card", "cash"],
+            "fare_amount": [10.0, 20.0, 30.0, 40.0],
+            "trip_distance": [1.0, 2.0, 3.0, 4.0],
+            "pickup_datetime": pl.datetime_range(
+                pl.datetime(2025, 1, 1),
+                pl.datetime(2025, 1, 4),
+                interval="1d",
+                eager=True,
+            ),
+        }
+    )
+
+
+def test_agent_executes_grouped_question():
+    response = AnalystAgent().ask(
+        "What is the average fare_amount by payment_type?",
+        make_df(),
+    )
+    assert response.plan.operation == "aggregate"
+    assert response.plan.metric == "fare_amount"
+    assert response.result["analysis"] == "grouped_aggregation"
+    assert len(response.result["result"]) == 2
+    assert response.execution_steps[-1] == "return_structured_result"
+
+
+def test_agent_executes_time_series_question():
+    response = AnalystAgent().ask(
+        "Show the daily trend of average fare_amount over pickup_datetime",
+        make_df(),
+    )
+    assert response.plan.operation == "time_series"
+    assert response.result["analysis"] == "time_series"
+
+
+def test_agent_executes_correlation():
+    response = AnalystAgent().ask(
+        "What is the correlation between fare_amount and trip_distance?",
+        make_df(),
+    )
+    assert response.plan.operation == "correlation"
+    assert response.result["analysis"] == "correlation"
+
+
+def test_agent_executes_top_n():
+    response = AnalystAgent().ask(
+        "Show the top 1 payment_type groups by highest average fare_amount",
+        make_df(),
+    )
+    assert response.plan.limit == 1
+    assert len(response.result["result"]) == 1
+
+
+def test_agent_serializes_trace():
+    response = AnalystAgent().ask(
+        "Give me descriptive statistics for trip_distance",
+        make_df(),
+    )
+    payload = response.to_dict()
+    assert payload["question"]
+    assert payload["plan"]["operation"] == "describe"
+    assert payload["execution_steps"] == [
+        "inspect_dataset_schema",
+        "plan:describe",
+        "validate_plan",
+        "execute_analysis",
+        "return_structured_result",
+    ]
+
+
+def test_agent_executes_filtered_year_time_series():
+    df = pl.DataFrame({
+        "country": ["India", "India", "USA", "India"],
+        "year": [2020, 2021, 2020, 2022],
+        "gdp_growth": [3.0, 4.0, 2.0, 5.0],
+    })
+    response = AnalystAgent().ask(
+        "How did India's GDP growth change over the years?",
+        df,
+    )
+    assert response.plan.operation == "time_series"
+    assert response.plan.datetime_column == "year"
+    assert response.plan.metric == "gdp_growth"
+    assert response.plan.filter_column == "country"
+    assert response.plan.filter_value == "India"
+    assert response.result["analysis"] == "time_series"
+    assert response.result["result"] == [
+        {"year": 2020, "gdp_growth": 3.0},
+        {"year": 2021, "gdp_growth": 4.0},
+        {"year": 2022, "gdp_growth": 5.0},
+    ]
+
+def test_agent_executes_filtered_year_time_series_with_explicit_average():
+    df = pl.DataFrame({
+        "country": ["India", "India", "USA", "India"],
+        "year": [2020, 2021, 2020, 2022],
+        "gdp_growth": [3.0, 4.0, 2.0, 5.0],
+    })
+    response = AnalystAgent().ask(
+        "What was India's average GDP growth over the years?",
+        df,
+    )
+    assert response.plan.operation == "time_series"
+    assert response.plan.aggregation == "mean"
+    assert response.plan.filter_column == "country"
+    assert response.plan.filter_value == "India"
+    assert response.result["analysis"] == "time_series"
+    assert response.result["result"] == [
+        {"year": 2020, "gdp_growth": 3.0},
+        {"year": 2021, "gdp_growth": 4.0},
+        {"year": 2022, "gdp_growth": 5.0},
+    ]
+
+@pytest.mark.parametrize(
+    ("direction", "expected"),
+    [
+        ("asc", ["low", "high", "missing"]),
+        ("desc", ["high", "low", "missing"]),
+    ],
+)
+def test_ranking_keeps_null_aggregates_last_for_both_directions(direction, expected):
+    from data_analyst.agent import _execute_plan
+    from data_analyst.planner import QueryPlan
+
+    df = pl.DataFrame(
+        {
+            "group": ["high", "missing", "low"],
+            "value": [10.0, None, 2.0],
+        }
+    )
+    plan = QueryPlan(
+        operation="aggregate",
+        group_by=["group"],
+        metric="value",
+        aggregation="mean",
+        sort_direction=direction,
+        question="test ranking null ordering",
+    )
+
+    result = _execute_plan(df, plan)
+
+    assert [row["group"] for row in result["result"]] == expected
+
+
+@pytest.mark.parametrize(
+    ("direction", "expected"),
+    [
+        ("asc", ["low"]),
+        ("desc", ["high"]),
+    ],
+)
+def test_top_n_ranking_does_not_select_null_aggregate(direction, expected):
+    from data_analyst.agent import _execute_plan
+    from data_analyst.planner import QueryPlan
+
+    df = pl.DataFrame(
+        {
+            "group": ["high", "missing", "low"],
+            "value": [10.0, None, 2.0],
+        }
+    )
+    plan = QueryPlan(
+        operation="aggregate",
+        group_by=["group"],
+        metric="value",
+        aggregation="mean",
+        sort_direction=direction,
+        limit=1,
+        question="test top n null ordering",
+    )
+
+    result = _execute_plan(df, plan)
+
+    assert [row["group"] for row in result["result"]] == expected
+
+
+
+
+def test_agent_response_is_strictly_json_serializable_with_datetime_results():
+    response = AnalystAgent().ask(
+        "Show the daily trend of average fare_amount over pickup_datetime",
+        make_df(),
+    )
+
+    serialized = json.dumps(response.to_dict(), allow_nan=False)
+    assert "2025-01-01" in serialized
+
+
+
+def test_grouped_count_ranking_applies_limit_and_generates_evidence():
+    from data_analyst.planner import QueryPlan
+
+    df = pl.DataFrame({"payment_type": ["card", "cash", "cash", "cash", "card"]})
+    planner = lambda question, **kwargs: QueryPlan(
+        operation="aggregate",
+        group_by=["payment_type"],
+        aggregation="count",
+        sort_direction="desc",
+        limit=1,
+        question=question,
+    )
+
+    response = AnalystAgent(planner=planner).ask("Count records by payment_type", df)
+
+    assert response.result["analysis"] == "grouped_count"
+    assert response.result["result"] == [{"payment_type": "cash", "count": 3}]
+    assert response.answer is not None
+    assert response.answer.evidence[0].values["context"] == "payment_type=cash"
+    assert response.answer.evidence[0].values["value"] == 3

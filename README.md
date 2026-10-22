@@ -1,75 +1,165 @@
 # AI Data Analyst Agent
 
-An extensible AI-powered data analysis platform designed to analyze **real-world structured datasets** using a reliable analytical engine, with an agent layer added in later stages.
+An extensible data analysis platform with a deterministic analytical engine, optional Groq/Gemini/OpenAI planning, evidence-backed answers, safe data preparation, and an authenticated FastAPI backend.
 
 ## Project vision
 
-The goal is to build an analyst that can work across different real-world datasets without hard-coded, dataset-specific analysis logic.
+Build an analyst that can work across real-world structured datasets without hard-coded, dataset-specific analysis logic.
 
-Initial real-world validation sources:
+Initial validation sources:
 
 - **NYC TLC Yellow Taxi Trip Records** — primary Stage 1 dataset
-- **UDISE+ education data** from India's Open Government Data platform — later validation dataset
-- **World Bank World Development Indicators** — later API integration
+- **UDISE+ education data** — later validation dataset
+- **World Bank World Development Indicators** — later validation dataset and API integration
 
-## Stage 1 — Foundation
+External datasets are not committed to this repository. See [data source guidance](docs/data_sources.md).
 
-Stage 1 focuses on the trustworthy analytical core rather than the LLM agent itself:
+## Implemented capabilities
 
-- CSV and Parquet ingestion
-- Dataset profiling
-- Data-quality checks
-- Descriptive statistics
-- Grouped/time-based analysis
-- DuckDB analytical queries
-- Structured, traceable analysis results
-- Natural-language query planning
-- Automated tests
-- Command-line interface
+- CSV and Parquet ingestion and schema scanning
+- Dataset profiling and data-quality checks
+- Descriptive statistics with quartiles, IQR, variance, zero/negative counts, and missingness rates
+- Global and grouped aggregations, multi-column grouping, explicit exact-match filters, ranking, percentage-of-total calculations, correlation, and time-series analysis
+- Deterministic natural-language query planning and validation
+- Optional OpenAI-backed planning at the planner boundary
+- Multi-step analytical reasoning with dependency-aware execution
+- Structured execution traces and evidence-backed answers
+- Optional safe data preparation with a transformation trace
+- Optional scikit-learn module for Isolation Forest anomaly detection and evaluated regression/classification baselines
+- Command-line interface and automated tests
+- FastAPI endpoints for authentication, dataset upload, analysis, reports, and usage
+- PostgreSQL persistence with Alembic migrations, workspace membership and resource isolation
+- Optional Groq and Gemini planner adapters, plus opt-in live provider smoke tests
 
-### Stage 1.3 — Query Planning (Complete)
+The Python analytical engine remains authoritative for schema validation, calculations, and numerical results. AI-assisted planning proposes a structured plan; it does not execute arbitrary Python or SQL.
 
-Stage 1.3 is complete and merged into GitHub `main` by PR #10. The deterministic planner converts supported natural-language requests into validated `QueryPlan` objects using only columns supplied by the dataset schema. It rejects ambiguous or unsupported requests, recognizes supported time frequencies, and records defaults when a frequency is omitted.
+## Stage 1.3 — Deterministic Query Planning
 
-The planner plans; it does not execute analysis. The `plan` CLI command returns a JSON plan. The analytical engine remains responsible for validation and computation.
+The deterministic planner converts supported natural-language requests into validated `QueryPlan` objects using the supplied dataset schema. It handles supported aggregation, grouping, ranking, filters, and time frequencies, and rejects ambiguous or unsupported requests. When a supported default is used, it should be explicit in the plan.
 
-The Stage 1.3 fix commit is `3a704c4a4f77b645eaaea92e7d458668f67783a6`; the GitHub merge commit is `0e322ace92e28e6dc945a5c5081a2bf8a27602ac`.
+The planner plans; it does not execute analysis. The `data-analyst plan` command returns a JSON plan, while the analytical engine validates and computes results.
 
-### Stage 1.4 — Optional Groq Integration (Planned)
+## Stage 1.5 — Optional LLM Planner
 
-Stage 1.4 is planned, not implemented. Groq may be added as an optional aid for interpreting questions, proposing query plans, and formulating explanations grounded in actual analytical results. The existing Python engine must remain authoritative for schema validation, execution, and numerical results. AI must not invent columns or data, and deterministic operation without an AI service must remain available.
+The deterministic planner remains the default. An optional OpenAI planner can propose a structured `QueryPlan`; the application validates the plan before execution.
 
-API keys will be kept outside source control. The integration will need explicit handling for unavailable services, malformed responses, rate limits, and other API errors. Stage 1.4 requires its own approved plan, implementation, and test cycle; this repository currently has no Groq integration or LLM agent.
+Install the optional dependency only when live LLM planning is wanted:
 
-The project deliberately does **not** commit external datasets to the repository. See [`docs/data_sources.md`](docs/data_sources.md) for source and download guidance.
+~~~bash
+pip install -e ".[llm]"
+~~~
 
-## Architecture and roadmap
+Set credentials through the environment; never commit API keys:
 
-```text
+~~~bash
+export OPENAI_API_KEY="..."
+# Optional: set OPENAI_MODEL to a model available to your account.
+~~~
+
+Live API usage may incur provider charges. CI tests the planner boundary without requiring live API calls.
+
+Example commands:
+
+~~~bash
+# Deterministic planning/analysis
+data-analyst ask data/raw/yellow_tripdata_2025-01.parquet "What is the average fare by payment type?"
+
+# Optional OpenAI-backed planning
+data-analyst ask data/raw/yellow_tripdata_2025-01.parquet "What is the average fare by payment type?" --planner openai
+~~~
+
+## Stage 2 — Multi-step Analytical Reasoning
+
+Supported complex questions can be decomposed into a validated dependency graph. Later steps can consume selected values from earlier results without allowing the model to execute arbitrary code. Each step records its plan, dependencies, filter bindings, and result. The executor applies a step limit and rejects dependency cycles.
+
+## Stage 3 — Evidence & Answer Generation
+
+The agent turns structured analytical results into deterministic, evidence-backed answers. Findings reference evidence IDs drawn from results produced by the analytical engine; unsupported result types are identified rather than guessed.
+
+The structured answer includes a concise summary, findings with evidence references, evidence items with source step IDs and values, and limitations when results are insufficient or unsupported. Use `--json` with `ask` to inspect the complete response.
+
+## Stronger analytics and optional machine learning
+
+The deterministic analytical engine supports global and grouped aggregations, multi-column grouping, explicit filters such as `where status is active`, ranking, percentage-of-total calculations, correlation, time-series aggregation, and richer descriptive statistics. Unsupported or ambiguous requests should be clarified rather than guessed.
+
+Machine learning is optional and is not used for ordinary sums, averages, counts, or rankings. Install it separately:
+
+~~~bash
+pip install -e ".[ml]"
+~~~
+
+Find unusual rows using the existing natural-language interface:
+
+~~~bash
+data-analyst ask data.csv "Find outliers in sales" --json
+~~~
+
+Train and evaluate a baseline supervised model using an explicit target and feature list:
+
+~~~bash
+data-analyst ml-predict data.csv --target sales --features price units region --task regression
+data-analyst ml-predict data.csv --target churned --features tenure monthly_spend plan --task classification
+data-analyst ml-forecast data.csv --datetime-column order_date --target sales --horizon 3
+~~~
+
+The predictive command uses a held-out train/test split and reports regression or classification metrics. The forecasting command uses a chronological holdout and compares its errors with a naive last-value baseline; forecast steps are relative to the last observation and do not infer calendar frequency. The result includes evaluation details and limitations; it is a baseline, not a guarantee of future performance. Check for target leakage, representative data, appropriate features, and a suitable evaluation strategy before using a model for decisions. Anomaly detection identifies unusual patterns, not necessarily errors or fraud. The optional ML dependency is installed in CI so the ML path is exercised by the test suite.
+
+## Stage 4 — Data Preparation
+
+Stage 4 adds an optional dataset-agnostic preparation layer that runs before analysis when explicitly requested.
+
+Safe automatic transformations include:
+
+- Normalize column names to stable snake_case names
+- Trim leading and trailing whitespace from strings
+- Convert blank strings to null
+- Parse obvious datetime columns when at least 95% of non-null values parse successfully
+- Drop completely empty columns
+
+Statistical or domain-dependent issues are reported as recommendations rather than silently changed. Examples include missing-value imputation, row deletion, outlier removal, exact duplicate removal, and domain-specific validity corrections.
+
+A preparation run retains the original profile and quality report, validated cleaning plan, applied transformation trace, recommendations, prepared profile, and prepared quality report. The source dataframe is not mutated or overwritten.
+
+~~~powershell
+# Inspect preparation recommendations and applied safe transformations
+data-analyst prepare data/raw/yellow_tripdata_2025-01.parquet
+
+# Prepare the data before answering a question
+data-analyst ask data/raw/yellow_tripdata_2025-01.parquet "What is the average fare by payment type?" --prepare
+
+# Inspect the complete structured response
+data-analyst ask data/raw/yellow_tripdata_2025-01.parquet "What is the average fare by payment type?" --prepare --json
+~~~
+
+## Planned work
+
+Broader real-world validation, richer visualizations, asynchronous workers, and production hardening remain future work. A first responsive web dashboard is now included on `stage-4-data-preparation`. Groq and Gemini planning are optional; credentials remain outside source control, provider failures are controlled, and deterministic validation/calculation remain authoritative.
+
+## Architecture
+
+~~~text
 Real-world dataset
     ↓
-Data ingestion
+Ingestion + schema scan
     ↓
-Dataset profiling
+Profiling + data-quality checks
     ↓
-Data-quality engine
+Optional safe data preparation
     ↓
-Deterministic query planning (implemented)
+Deterministic planner OR optional LLM planner
     ↓
-Deterministic analytical tools
-    ├── statistics
-    ├── grouped analysis
-    ├── time-series analysis
-    └── DuckDB queries
+Validated QueryPlan
     ↓
-Structured analysis results
+Single-step or multi-step agent execution
     ↓
-[Stage 1.4, planned] Optional Groq-assisted interpretation and explanations
+Deterministic analytical engine
     ↓
-[Later, planned] Visualizations and evidence-backed insights
-```
-
-Only the ingestion, profiling, quality, analysis, result, CLI, and deterministic planning layers are implemented in the current Stage 1 foundation. Groq, an AI agent, visualization, and evidence-grounded explanation features are future work.
+Structured results + execution trace
+    ↓
+Evidence extraction + validation
+    ↓
+Analyst answer + evidence trace
+~~~
 
 ## Technology
 
@@ -79,13 +169,51 @@ Only the ingestion, profiling, quality, analysis, result, CLI, and deterministic
 - NumPy
 - SciPy
 - Pytest
+- Optional OpenAI, Groq and Gemini SDKs for AI-assisted planning
 
-## Development policy
+## Development workflow
 
-This repository is being developed incrementally. Each stage is validated before the next layer is introduced. External data remains attributed to its original publisher. See [Development Workflow](docs/WORKFLOW.md) for the collaboration, approval, Git safety, and validation process.
+This repository is developed incrementally. Review the [Development Workflow](docs/WORKFLOW.md) before making changes; it describes the plan-first approval process, Git safety, and validation expectations. Each stage should be reviewed and tested before the next stage is introduced.
 
 ## Status
 
-**Stage 1.3 — Query Planning: complete and merged into `main`**
+- **Stage 1.3 — Deterministic query planning:** implemented
+- **Stage 1.5 — Optional OpenAI planner:** implemented
+- **Stage 2 — Multi-step analytical reasoning:** implemented
+- **Stage 3 — Evidence-backed answers:** implemented
+- **Stage 4 — Data preparation:** implemented on `stage-4-data-preparation`; not merged into `main`
+- **Enhanced analytics and optional ML:** implemented on `stage-4-data-preparation`; CI and optional live provider smoke verified
+- **Frontend dashboard MVP:** initial implementation on `stage-4-data-preparation`; awaiting complete validation
+- **Groq and Gemini providers:** optional adapters with offline tests and opt-in live smoke tests
+- **Backend API:** implemented on `stage-4-data-preparation`; requires database migration and secure environment configuration before use
 
-**Stage 1.4 — Optional Groq Integration: planned, not implemented**
+
+## Analyst-first frontend demo
+
+The frontend in `frontend/` is a practical analyst workspace rather than a static KPI mockup. It includes:
+
+- **Overview:** actual row/column counts, completeness, duplicate counts, quality findings, and a data preview.
+- **Data & quality:** column types, missingness, uniqueness, descriptive statistics, IQR outlier flags, and record preview.
+- **Analyze:** natural-language questions executed through the Python analytical engine, with the validated plan, execution trace, result payload, evidence, and limitations.
+- **Prepare data:** reviewable preparation plan with before/after profiles and recommendations; no silent imputation or outlier deletion.
+- **Reports:** export the actual result or preparation report as JSON for review.
+
+### Public portfolio demo
+
+The unauthenticated, read-only demo routes are isolated under `/api/v1/demo`. They use a small synthetic dataset by default. Visitors can optionally upload a CSV or Parquet file up to 5 MB; the API parses it in memory for that request and does not persist the upload or write it to the user/workspace database. Demo uploads are capped at 100,000 rows and 200 columns. This demo route does not expose authenticated users' datasets and does not disable authentication on existing production endpoints.
+
+Start the stack after configuring `.env` from `.env.example` with a unique `APP_SECRET_KEY` and `POSTGRES_PASSWORD`:
+
+~~~bash
+docker compose up --build
+~~~
+
+Then open `http://localhost:8080`. API documentation is available at `http://localhost:8000/docs`. Nginx proxies `/api/` to FastAPI over the internal Compose network. For real authenticated workflows, use the existing authenticated API endpoints. Before public production deployment, add HTTPS, edge rate limiting, secure deployment configuration, backups, retention controls, and a documented privacy policy.
+
+## Backend API
+
+The authenticated FastAPI backend exposes dataset upload, profile/quality/preparation, analysis, report download, and usage endpoints. See [Backend API documentation](docs/API.md) for setup and route details.
+
+## Groq and Gemini
+
+The deterministic planner is the default. Optional Groq and Gemini planners can be selected with `--planner groq` or `--planner gemini`; configure API keys only through environment variables. See [provider and live-test instructions](docs/PROVIDERS.md). Standard CI uses fake responses and does not consume API quota; live smoke tests run only when provider keys are configured.
