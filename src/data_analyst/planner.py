@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import asdict, dataclass, field
-from typing import Any, Literal, Sequence
+from typing import Any, Literal, Mapping, Sequence
 
 Operation = Literal[
     "profile",
@@ -193,8 +193,16 @@ def _detect_sort(question: str) -> str | None:
     return next(iter(directions), None)
 
 
-def _detect_explicit_filter(question: str, columns: Sequence[str]) -> tuple[str, str] | tuple[None, None]:
-    """Recognize explicit, exact-match filters such as 'where status is active'."""
+def _detect_explicit_filter(
+    question: str,
+    columns: Sequence[str],
+    categorical_values: Mapping[str, Sequence[Any]] | None = None,
+) -> tuple[str, Any] | tuple[None, None]:
+    """Resolve explicit filters and common value-first phrasing against observed data.
+
+    The value vocabulary is supplied by the caller from the current dataset; the
+    planner never assumes domain-specific columns or values.
+    """
     for column in sorted(columns, key=len, reverse=True):
         pattern = (
             r"\b(?:where|filter(?:ed)? by)\s+"
@@ -207,8 +215,60 @@ def _detect_explicit_filter(question: str, columns: Sequence[str]) -> tuple[str,
             value = (match.group(1) or match.group(2) or "").strip()
             if value:
                 return column, value
-    return None, None
 
+    if not categorical_values:
+        return None, None
+
+    normalized_question = f" {_normalize(question)} "
+    candidates: list[tuple[str, Any]] = []
+    for column, values in categorical_values.items():
+        if column not in columns:
+            continue
+        normalized_column = _normalize(column)
+        column_mentioned = bool(
+            normalized_column
+            and re.search(
+                rf"(?<![a-z0-9]){re.escape(normalized_column)}(?![a-z0-9])",
+                normalized_question,
+            )
+        )
+        for value in values:
+            if value is None:
+                continue
+            normalized_value = _normalize(str(value))
+            if not normalized_value:
+                continue
+            value_pattern = rf"(?<![a-z0-9]){re.escape(normalized_value)}(?![a-z0-9])"
+            if not re.search(value_pattern, normalized_question):
+                continue
+            value_context = bool(
+                re.search(
+                    rf"\b(?:for|in|within|from|under|where)\s+(?:the\s+)?{re.escape(normalized_value)}\b",
+                    normalized_question,
+                )
+                or re.search(
+                    rf"\b{re.escape(normalized_value)}\s+{re.escape(normalized_column)}\b",
+                    normalized_question,
+                )
+            )
+            if column_mentioned or value_context:
+                candidates.append((column, value))
+
+    unique_candidates: list[tuple[str, Any]] = []
+    for candidate in candidates:
+        if not any(
+            candidate[0] == existing[0]
+            and str(candidate[1]).casefold() == str(existing[1]).casefold()
+            for existing in unique_candidates
+        ):
+            unique_candidates.append(candidate)
+
+    if len(unique_candidates) > 1:
+        details = ", ".join(f"{column}={value!r}" for column, value in unique_candidates)
+        raise PlanningError(
+            f"Ambiguous filter value in question; it matches multiple dataset values: {details}."
+        )
+    return unique_candidates[0] if unique_candidates else (None, None)
 
 def _one_column(columns: Sequence[str], purpose: str) -> str | None:
     if len(columns) > 1:
@@ -235,6 +295,7 @@ def plan_query(
     columns: Sequence[str],
     numeric_columns: Sequence[str] | None = None,
     datetime_columns: Sequence[str] | None = None,
+    categorical_values: Mapping[str, Sequence[Any]] | None = None,
 ) -> QueryPlan:
     """Convert a supported natural-language question into a structured plan.
 
@@ -256,7 +317,9 @@ def plan_query(
 
     mentioned_numeric = _numeric_columns(question, columns, numeric_columns)
     mentioned_datetime = _datetime_columns(question, columns, datetime_columns)
-    filter_column, filter_value = _detect_explicit_filter(question, columns)
+    filter_column, filter_value = _detect_explicit_filter(
+        question, columns, categorical_values=categorical_values
+    )
 
     anomaly_intent = any(term in text for term in ("anomaly", "anomalies", "outlier", "outliers", "unusual records", "unusual observations"))
     if anomaly_intent:
