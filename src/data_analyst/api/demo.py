@@ -152,7 +152,15 @@ def demo_narrative(payload: dict):
     report = payload.get("report")
     if not isinstance(report, dict):
         raise HTTPException(status_code=422, detail="Provide a JSON report object.")
-    encoded = json.dumps(report, ensure_ascii=False, allow_nan=False)
+    def without_previews(value):
+        if isinstance(value, dict):
+            return {key: without_previews(item) for key, item in value.items() if key.lower() not in {"preview", "raw_rows", "dataframe"}}
+        if isinstance(value, list):
+            return [without_previews(item) for item in value]
+        return value
+
+    safe_report = without_previews(report)
+    encoded = json.dumps(safe_report, ensure_ascii=False, allow_nan=False)
     if len(encoded.encode("utf-8")) > 100_000:
         raise HTTPException(status_code=413, detail="Report is too large to summarize; export the JSON instead.")
 
