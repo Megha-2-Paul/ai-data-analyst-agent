@@ -5,6 +5,7 @@ import polars as pl
 import pytest
 
 from data_analyst.analysis import aggregate, time_series
+from data_analyst.agent import AnalystAgent
 from data_analyst.cli import main
 from data_analyst.planner import PlanningError, plan_query
 
@@ -467,3 +468,50 @@ def test_plans_filtered_year_time_series_with_explicit_sum():
     assert plan.frequency == "1y"
     assert plan.filter_column == "country"
     assert plan.filter_value == "India"
+
+def test_plans_natural_language_filter_from_observed_categorical_value():
+    plan = plan_query(
+        "What is the average revenue for the West region?",
+        columns=["region", "revenue"],
+        numeric_columns=["revenue"],
+        datetime_columns=[],
+        categorical_values={"region": ["East", "West", "North"]},
+    )
+
+    assert plan.operation == "aggregate"
+    assert plan.metric == "revenue"
+    assert plan.filter_column == "region"
+    assert plan.filter_value == "West"
+
+
+def test_agent_applies_natural_language_filter_before_aggregation():
+    frame = pl.DataFrame(
+        {
+            "region": ["West", "West", "East"],
+            "revenue": [10.0, 20.0, 100.0],
+        }
+    )
+
+    response = AnalystAgent().ask(
+        "What is the average revenue for the West region?",
+        frame,
+    )
+
+    assert response.plan.filter_column == "region"
+    assert response.plan.filter_value == "West"
+    assert response.result["result"] == [{"revenue": 15.0}]
+
+
+def test_rejects_ambiguous_observed_filter_value():
+    with pytest.raises(PlanningError, match="Ambiguous filter value"):
+        plan_query(
+            "What is the average revenue for West?",
+            columns=["region", "sales_area", "revenue"],
+            numeric_columns=["revenue"],
+            datetime_columns=[],
+            categorical_values={
+                "region": ["West", "East"],
+                "sales_area": ["West", "Central"],
+            },
+        )
+
