@@ -230,13 +230,17 @@ class AnalystAgent:
                 analysis_plan=analysis_plan,
             )
 
-        plan = self._planner(
-            question,
-            columns=df.columns,
-            numeric_columns=numeric_columns,
-            datetime_columns=datetime_columns,
-            categorical_values=categorical_values,
-        )
+        planner_kwargs = {
+            "columns": df.columns,
+            "numeric_columns": numeric_columns,
+            "datetime_columns": datetime_columns,
+        }
+        # Preserve compatibility with injected planners (including LLM planners)
+        # whose call signatures predate the optional observed-value vocabulary.
+        if self._planner is plan_query:
+            planner_kwargs["categorical_values"] = categorical_values
+
+        plan = self._planner(question, **planner_kwargs)
         result = _execute_plan(df, plan)
 
         return AgentResponse(
